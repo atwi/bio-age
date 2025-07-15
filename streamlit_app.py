@@ -107,6 +107,55 @@ st.markdown("""
 st.title("📱 Facial Age Estimator")
 st.markdown("**Estimate biological age from facial features**")
 
+# Main interface - moved up for better UX
+st.markdown("### 📸 Upload Your Photo")
+
+# Memory cleanup button for cloud
+if IS_CLOUD:
+    if st.button("🧹 Clear Memory Cache"):
+        aggressive_cleanup()
+        st.success("✅ Memory cleared!")
+
+# Simplified upload (cloud-friendly)
+uploaded_file = st.file_uploader(
+    "Choose an image",
+    type=["jpg", "jpeg", "png"],
+    help="Upload a clear photo with visible face(s)"
+)
+
+# Model information and credits - moved below upload
+st.markdown("---")
+st.markdown("### 🎯 Model Information")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.markdown("""
+    **🏫 Harvard FaceAge Model**
+    - More accurate for ages 60+ 
+    - Less accurate for ages <40
+    - Specialized for biological aging
+    - 85MB model size
+    """)
+
+with col2:
+    st.markdown("""
+    **🤖 DeepFace Model**
+    - Broad age range accuracy
+    - General-purpose face analysis
+    - Multiple neural networks
+    - 539MB model size
+    """)
+
+st.markdown("### 📚 Credits")
+st.markdown("""
+- **Harvard FaceAge**: [Aging Faces in the Wild](https://github.com/JingchunCheng/All-Age-Faces-Dataset) - Research model for biological age estimation
+- **DeepFace**: [Facebook AI Research](https://github.com/serengil/deepface) - Comprehensive face analysis framework
+- **MTCNN**: Face detection and alignment
+""")
+
+st.markdown("---")
+
 # Cloud-optimized model handling
 MODEL_ZIP = "model_saved_tf.zip"
 MODEL_DIR = "model_saved_tf"
@@ -286,22 +335,6 @@ def lazy_load_models():
         except Exception as e:
             st.error(f"❌ Model loading failed: {str(e)}")
             return False
-
-# Main interface
-st.markdown("### 📸 Upload Your Photo")
-
-# Memory cleanup button for cloud
-if IS_CLOUD:
-    if st.button("🧹 Clear Memory Cache"):
-        aggressive_cleanup()
-        st.success("✅ Memory cleared!")
-
-# Simplified upload (cloud-friendly)
-uploaded_file = st.file_uploader(
-    "Choose an image",
-    type=["jpg", "jpeg", "png"],
-    help="Upload a clear photo with visible face(s)"
-)
 
 if uploaded_file is not None:
     # Lazy load models only when user uploads an image
