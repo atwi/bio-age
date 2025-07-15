@@ -1,5 +1,6 @@
 streamlit==1.32.0
-opencv-python==4.10.0.82
+tensorflow==2.19.0
+opencv-python==4.10.0.86
 mtcnn==1.0.0
 matplotlib==3.10.3
 pillow==10.3.0
@@ -7,4 +8,3 @@ numpy==1.26.4
 pandas==2.2.3
 seaborn==0.13.2
 keras==3.10.0
-tensorflow==2.19.0
