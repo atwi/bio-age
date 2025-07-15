@@ -328,8 +328,8 @@ if uploaded_file is not None:
                 
                 # Load Harvard model fresh each time (no caching)
                 harvard_model = None
-                if not IS_CLOUD:  # Only load Harvard locally to save cloud memory
-                    harvard_model = load_harvard_model()
+                # Re-enable Harvard model in cloud since it's smaller than DeepFace (85MB vs 539MB)
+                harvard_model = load_harvard_model()
                 
                 # Process each face
                 for i, face in enumerate(faces):
