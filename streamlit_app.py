@@ -7,12 +7,33 @@ matplotlib.use('Agg')  # Use non-interactive backend for cloud environments
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from mtcnn import MTCNN
-import tensorflow as tf
-import keras
+
+# Suppress TensorFlow warnings for cloud deployment
 import os
-import zipfile
-import gdown
-from deepface import DeepFace
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+import warnings
+warnings.filterwarnings('ignore')
+
+try:
+    import tensorflow as tf
+    import keras
+    import zipfile
+    import gdown
+    from deepface import DeepFace
+    
+    # Verify versions for cloud deployment
+    tf_version = tf.__version__
+    keras_version = keras.__version__
+    
+    if not tf_version.startswith('2.13'):
+        st.warning(f"⚠️ TensorFlow version {tf_version} detected. Expected 2.13.x")
+    
+    if not keras_version.startswith('2.13'):
+        st.warning(f"⚠️ Keras version {keras_version} detected. Expected 2.13.x")
+        
+except ImportError as e:
+    st.error(f"❌ Import error: {e}")
+    st.stop()
 
 # Page configuration for mobile
 st.set_page_config(
@@ -21,6 +42,12 @@ st.set_page_config(
     layout="centered",
     initial_sidebar_state="collapsed"
 )
+
+# Cloud environment configuration
+if 'STREAMLIT_CLOUD' in os.environ or 'HOSTNAME' in os.environ:
+    # Running on Streamlit Cloud
+    st.info("🌟 Running on Streamlit Cloud")
+    # Additional cloud-specific configurations can go here
 
 # Custom CSS for mobile optimization
 st.markdown("""
@@ -71,23 +98,43 @@ GDRIVE_FILE_ID = "12wNpYBz3j5mP9mt6S_ZH4k0sI6dVDeVV"
 def download_and_extract_model():
     if not os.path.exists(MODEL_DIR):
         url = f"https://drive.google.com/uc?id={GDRIVE_FILE_ID}"
-        st.info("Downloading FaceAge model. This may take a minute...")
+        
+        # Show progress for cloud deployment
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        status_text.text("📥 Downloading FaceAge model...")
+        progress_bar.progress(10)
+        
         try:
             # Download with retry logic for cloud environments
             gdown.download(url, MODEL_ZIP, quiet=False)
+            progress_bar.progress(50)
             
+            status_text.text("📦 Extracting model...")
             # Extract the model
             with zipfile.ZipFile(MODEL_ZIP, "r") as zip_ref:
                 zip_ref.extractall(".")
+            progress_bar.progress(80)
             
+            status_text.text("🧹 Cleaning up...")
             # Clean up zip file
             if os.path.exists(MODEL_ZIP):
                 os.remove(MODEL_ZIP)
+            progress_bar.progress(100)
             
-            st.success("Model downloaded and extracted!")
+            status_text.text("✅ Model ready!")
+            st.success("Harvard FaceAge model downloaded and extracted!")
+            
         except Exception as e:
-            st.error(f"❌ Failed to download model: {str(e)}")
+            progress_bar.empty()
+            status_text.empty()
+            st.error(f"❌ Failed to download Harvard model: {str(e)}")
             st.info("💡 The app will continue with DeepFace only.")
+        finally:
+            # Clean up progress indicators
+            progress_bar.empty()
+            status_text.empty()
 
 # Download model if needed
 with st.spinner("Checking model files..."):
@@ -137,15 +184,33 @@ def load_faceage_saved_model():
 
 # Load models
 with st.spinner("Loading AI models..."):
-    harvard_model = load_faceage_saved_model()
-    # Don't stop if Harvard model fails - DeepFace can still work
-    
-    if harvard_model is None:
-        st.info("📱 Using DeepFace for age estimation (good for all ages, especially younger faces)")
-    else:
-        st.success("🎯 Using both Harvard FaceAge and DeepFace models")
-    
-    detector = MTCNN()
+    try:
+        harvard_model = load_faceage_saved_model()
+        # Don't stop if Harvard model fails - DeepFace can still work
+        
+        if harvard_model is None:
+            st.info("📱 Using DeepFace for age estimation (good for all ages, especially younger faces)")
+        else:
+            st.success("🎯 Using both Harvard FaceAge and DeepFace models")
+        
+        # Initialize face detector
+        detector = MTCNN()
+        st.success("✅ Face detection ready (MTCNN)")
+        
+        # Test DeepFace to ensure it's working
+        test_face = np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8)
+        try:
+            DeepFace.analyze(test_face, actions=['age'], enforce_detection=False)
+            st.success("✅ DeepFace age estimation ready")
+        except Exception as e:
+            st.error(f"❌ DeepFace initialization failed: {str(e)}")
+            st.info("💡 Please refresh the page to try again")
+            st.stop()
+            
+    except Exception as e:
+        st.error(f"❌ Critical error during model loading: {str(e)}")
+        st.info("💡 Please refresh the page to try again")
+        st.stop()
 
 # Main interface
 st.markdown("### 📸 Upload a photo or take a new one")
