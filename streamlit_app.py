@@ -56,6 +56,17 @@ except ImportError as e:
     st.error("Please check your requirements.txt file.")
     st.stop()
 
+# Memory management function
+def aggressive_cleanup():
+    """Aggressive memory cleanup for cloud environments"""
+    gc.collect()
+    if IS_CLOUD:
+        try:
+            # Clear TensorFlow backend session
+            tf.keras.backend.clear_session()
+        except:
+            pass
+    
 # Page configuration for mobile
 st.set_page_config(
     page_title="Facial Age Estimator",
@@ -64,14 +75,20 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Cloud environment info
+# Cloud environment info with memory monitoring
 if IS_CLOUD:
-    st.info("🌟 Running on Streamlit Cloud with Harvard + DeepFace models")
+    st.info("🌟 Running on Streamlit Cloud with Memory Optimization")
     
     # Memory monitoring for cloud
     try:
         memory_info = psutil.virtual_memory()
-        st.caption(f"Memory: {memory_info.percent}% used")
+        memory_percent = memory_info.percent
+        st.caption(f"Memory: {memory_percent}% used")
+        
+        # Warning if memory is high
+        if memory_percent > 80:
+            st.warning("⚠️ High memory usage detected - optimizing...")
+            aggressive_cleanup()
     except:
         pass
 else:
@@ -95,7 +112,7 @@ MODEL_ZIP = "model_saved_tf.zip"
 MODEL_DIR = "model_saved_tf"
 GDRIVE_FILE_ID = "12wNpYBz3j5mP9mt6S_ZH4k0sI6dVDeVV"
 
-@st.cache_resource
+# Remove caching for large models to prevent memory issues
 def download_harvard_model():
     """Download Harvard model with cloud optimizations and enhanced error handling"""
     if not os.path.exists(MODEL_DIR):
@@ -150,9 +167,9 @@ def download_harvard_model():
     
     return True
 
-@st.cache_resource
+# Remove caching to prevent memory buildup
 def load_harvard_model():
-    """Load Harvard model with enhanced cloud compatibility"""
+    """Load Harvard model with enhanced cloud compatibility - NO CACHING"""
     # Try to download first
     if not download_harvard_model():
         st.info("ℹ️ Harvard model unavailable - using DeepFace only")
@@ -209,9 +226,9 @@ def init_face_detector():
         st.error(f"❌ Face detector failed: {str(e)}")
         return None
 
-@st.cache_resource
+# Remove caching for DeepFace test to prevent memory buildup
 def test_deepface_cloud():
-    """Test DeepFace with cloud-specific settings"""
+    """Test DeepFace with cloud-specific settings - NO CACHING"""
     try:
         # Create minimal test image
         test_img = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
@@ -226,7 +243,7 @@ def test_deepface_cloud():
         
         # Force garbage collection
         del test_img, result
-        gc.collect()
+        aggressive_cleanup()
         
         return True
         
@@ -238,41 +255,31 @@ def test_deepface_cloud():
 if 'models_loaded' not in st.session_state:
     st.session_state.models_loaded = False
     st.session_state.detector = None
-    st.session_state.harvard_model = None
-    st.session_state.deepface_ok = False
 
 def lazy_load_models():
-    """Lazy load models only when user uploads an image"""
+    """Lazy load models only when user uploads an image - NO PERSISTENT CACHING"""
     if st.session_state.models_loaded:
         return True
     
     with st.spinner("🔄 Loading AI models... This may take a moment."):
         try:
-            # Step 1: Face detector (essential)
+            # Step 1: Face detector (keep cached as it's small)
             st.session_state.detector = init_face_detector()
             if st.session_state.detector is None:
                 st.error("❌ Face detection failed - app cannot continue")
                 return False
             
-            # Step 2: Test DeepFace (essential)
-            st.session_state.deepface_ok = test_deepface_cloud()
-            if not st.session_state.deepface_ok:
+            # Step 2: Test DeepFace (no caching)
+            deepface_ok = test_deepface_cloud()
+            if not deepface_ok:
                 st.error("❌ DeepFace failed - app cannot continue")
                 return False
             
-            # Step 3: Harvard model (optional but now enabled for cloud)
-            st.session_state.harvard_model = load_harvard_model()
-            
             st.session_state.models_loaded = True
-            
-            # Success message
-            models_msg = "DeepFace"
-            if st.session_state.harvard_model:
-                models_msg += " + Harvard"
-            st.success(f"✅ Ready! Using {models_msg} models")
+            st.success("✅ Ready! Models initialized")
             
             # Memory cleanup
-            gc.collect()
+            aggressive_cleanup()
             
             return True
             
@@ -282,6 +289,12 @@ def lazy_load_models():
 
 # Main interface
 st.markdown("### 📸 Upload Your Photo")
+
+# Memory cleanup button for cloud
+if IS_CLOUD:
+    if st.button("🧹 Clear Memory Cache"):
+        aggressive_cleanup()
+        st.success("✅ Memory cleared!")
 
 # Simplified upload (cloud-friendly)
 uploaded_file = st.file_uploader(
@@ -313,6 +326,11 @@ if uploaded_file is not None:
             else:
                 st.success(f"✅ Found {len(faces)} face(s)")
                 
+                # Load Harvard model fresh each time (no caching)
+                harvard_model = None
+                if not IS_CLOUD:  # Only load Harvard locally to save cloud memory
+                    harvard_model = load_harvard_model()
+                
                 # Process each face
                 for i, face in enumerate(faces):
                     x, y, w, h = face['box']
@@ -321,9 +339,9 @@ if uploaded_file is not None:
                     # Extract face
                     face_crop = img_array[y:y+h, x:x+w]
                     
-                    # Try Harvard model first (now enabled for cloud)
+                    # Try Harvard model first (local only)
                     harvard_age = None
-                    if st.session_state.harvard_model is not None:
+                    if harvard_model is not None:
                         try:
                             # Prepare face for Harvard model
                             face_resized_harvard = cv2.resize(face_crop, (160, 160))
@@ -339,13 +357,13 @@ if uploaded_file is not None:
                             # Predict age with Harvard model
                             try:
                                 # Handle different model types
-                                if hasattr(st.session_state.harvard_model, 'predict'):
+                                if hasattr(harvard_model, 'predict'):
                                     # Standard Keras model
-                                    prediction = st.session_state.harvard_model.predict(face_input, verbose=0)
+                                    prediction = harvard_model.predict(face_input, verbose=0)
                                     harvard_age = float(np.squeeze(prediction))
-                                elif hasattr(st.session_state.harvard_model, 'signatures'):
+                                elif hasattr(harvard_model, 'signatures'):
                                     # SavedModel format
-                                    signature = st.session_state.harvard_model.signatures['serving_default']
+                                    signature = harvard_model.signatures['serving_default']
                                     prediction = signature(tf.constant(face_input, dtype=tf.float32))
                                     if isinstance(prediction, dict):
                                         age_prediction = list(prediction.values())[0]
@@ -354,7 +372,7 @@ if uploaded_file is not None:
                                     harvard_age = float(np.squeeze(age_prediction))
                                 else:
                                     # Fallback - try direct call
-                                    prediction = st.session_state.harvard_model(face_input)
+                                    prediction = harvard_model(face_input)
                                     if isinstance(prediction, dict):
                                         age_prediction = list(prediction.values())[0]
                                     else:
@@ -363,6 +381,11 @@ if uploaded_file is not None:
                                 
                                 # Clamp age to reasonable range
                                 harvard_age = max(0, min(120, harvard_age))
+                                
+                                # Clean up prediction variables
+                                del face_input, prediction
+                                if 'age_prediction' in locals():
+                                    del age_prediction
                                 
                             except Exception as e:
                                 st.warning(f"⚠️ Harvard model prediction failed for face {i+1}: {str(e)}")
@@ -396,9 +419,9 @@ if uploaded_file is not None:
                             # Clamp to reasonable range
                             deepface_age = max(10, min(100, deepface_age))
                             
-                            # Clean up memory
+                            # Clean up memory aggressively
                             del face_resized, result
-                            gc.collect()
+                            aggressive_cleanup()
                             
                         else:
                             st.warning(f"Face {i+1} too small to analyze")
@@ -437,18 +460,24 @@ if uploaded_file is not None:
                     
                     st.markdown("---")
                 
-                # Clean up memory
+                # Clean up harvard model to free memory
+                if harvard_model is not None:
+                    del harvard_model
+                    
+                # Clean up processing variables
                 del img_array, faces
-                gc.collect()
+                aggressive_cleanup()
                 
     except Exception as e:
         st.error(f"❌ Processing failed: {str(e)}")
         st.error("Please try a different image or refresh the page.")
+        # Clean up on error
+        aggressive_cleanup()
 
 # Footer
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666; font-size: 0.9rem;'>
-    <p>🔬 AI-Powered Age Estimation • 🌟 Cloud Optimized • �� Harvard + DeepFace</p>
+    <p>🔬 AI-Powered Age Estimation • 🌟 Memory Optimized • 🤖 DeepFace + Harvard</p>
 </div>
 """, unsafe_allow_html=True) 
