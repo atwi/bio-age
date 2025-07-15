@@ -1,0 +1,29 @@
+# Python virtual environments
+faceage_env/
+.venv/
+venv/
+ENV/
+
+# Model files and large archives
+model_saved_tf/
+*.h5
+*.tar.gz
+*.zip
+
+# Output and result images (keep only if needed for demo)
+*.png
+*.jpg
+outputs/
+FaceAge/outputs/
+FaceAge/data/test_images/
+
+# System and cache files
+.DS_Store
+__pycache__/
+*.pyc
+
+# Jupyter/IPython checkpoints
+.ipynb_checkpoints/
+
+# Misc
+*.log 
