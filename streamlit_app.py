@@ -66,7 +66,7 @@ st.set_page_config(
 
 # Cloud environment info
 if IS_CLOUD:
-    st.info("🌟 Running on Streamlit Cloud")
+    st.info("🌟 Running on Streamlit Cloud with Harvard + DeepFace models")
     
     # Memory monitoring for cloud
     try:
@@ -74,6 +74,8 @@ if IS_CLOUD:
         st.caption(f"Memory: {memory_info.percent}% used")
     except:
         pass
+else:
+    st.info("🖥️ Running locally with Harvard + DeepFace models")
 
 # Streamlined CSS for cloud
 st.markdown("""
@@ -95,41 +97,76 @@ GDRIVE_FILE_ID = "12wNpYBz3j5mP9mt6S_ZH4k0sI6dVDeVV"
 
 @st.cache_resource
 def download_harvard_model():
-    """Download Harvard model with cloud optimizations"""
-    if IS_CLOUD:
-        st.info("⚠️ Harvard model download disabled in cloud to prevent timeouts")
-        return False
-    
+    """Download Harvard model with cloud optimizations and enhanced error handling"""
     if not os.path.exists(MODEL_DIR):
         try:
             url = f"https://drive.google.com/uc?id={GDRIVE_FILE_ID}"
             
-            with st.spinner("📥 Downloading model..."):
+            # Enhanced progress indicator for cloud
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            status_text.text("🔄 Initializing download...")
+            progress_bar.progress(10)
+            
+            # Download with timeout for cloud
+            import signal
+            
+            def timeout_handler(signum, frame):
+                raise TimeoutError("Download timeout")
+            
+            # Set timeout for cloud (5 minutes)
+            if IS_CLOUD:
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(300)  # 5 minutes
+            
+            try:
+                status_text.text("📥 Downloading Harvard model (85MB)...")
+                progress_bar.progress(30)
+                
                 gdown.download(url, MODEL_ZIP, quiet=True)
+                
+                status_text.text("📦 Extracting model...")
+                progress_bar.progress(70)
                 
                 with zipfile.ZipFile(MODEL_ZIP, "r") as zip_ref:
                     zip_ref.extractall(".")
                 
+                status_text.text("🧹 Cleaning up...")
+                progress_bar.progress(90)
+                
                 if os.path.exists(MODEL_ZIP):
                     os.remove(MODEL_ZIP)
+                
+                progress_bar.progress(100)
+                status_text.text("✅ Harvard model ready!")
+                
+                # Clean up progress indicators
+                time.sleep(1)
+                progress_bar.empty()
+                status_text.empty()
+                
+                return True
+                
+            finally:
+                if IS_CLOUD:
+                    signal.alarm(0)  # Cancel timeout
                     
-            st.success("✅ Model downloaded!")
-            return True
-            
+        except TimeoutError:
+            st.warning("⏱️ Harvard model download timed out. Using DeepFace only.")
+            return False
         except Exception as e:
-            st.warning(f"⚠️ Model download failed: {str(e)}")
+            st.warning(f"⚠️ Harvard model download failed: {str(e)}. Using DeepFace only.")
             return False
     
     return True
 
 @st.cache_resource
 def load_harvard_model():
-    """Load Harvard model with cloud safeguards"""
-    if IS_CLOUD:
-        st.info("ℹ️ Harvard model disabled in cloud environment")
-        return None
-    
+    """Load Harvard model with enhanced cloud compatibility"""
+    # Try to download first
     if not download_harvard_model():
+        st.info("ℹ️ Harvard model unavailable - using DeepFace only")
         return None
     
     # Try different possible paths for the model
@@ -143,32 +180,34 @@ def load_harvard_model():
     for model_path in possible_paths:
         if os.path.exists(model_path):
             try:
-                if model_path.endswith('.h5'):
-                    # Load Keras .h5 model
-                    model = keras.models.load_model(model_path)
-                    st.success(f"✅ Harvard model loaded from: {model_path}")
-                    return model
-                else:
-                    # Load TensorFlow SavedModel (compatible with TF 2.13.0)
-                    try:
-                        # Try loading as Keras model first
-                        model = tf.keras.models.load_model(model_path)
+                # Cloud-optimized loading with timeout
+                with st.spinner(f"🔄 Loading Harvard model from {model_path}..."):
+                    if model_path.endswith('.h5'):
+                        # Load Keras .h5 model
+                        model = keras.models.load_model(model_path)
                         st.success(f"✅ Harvard model loaded from: {model_path}")
                         return model
-                    except Exception as e1:
-                        # Fallback to SavedModel loading
+                    else:
+                        # Load TensorFlow SavedModel (compatible with TF 2.13.0)
                         try:
-                            model = tf.saved_model.load(model_path)
-                            st.success(f"✅ SavedModel loaded from: {model_path}")
+                            # Try loading as Keras model first
+                            model = tf.keras.models.load_model(model_path)
+                            st.success(f"✅ Harvard model loaded from: {model_path}")
                             return model
-                        except Exception as e2:
-                            st.warning(f"⚠️ Failed to load from {model_path}: Keras error: {str(e1)}, SavedModel error: {str(e2)}")
-                            continue
+                        except Exception as e1:
+                            # Fallback to SavedModel loading
+                            try:
+                                model = tf.saved_model.load(model_path)
+                                st.success(f"✅ SavedModel loaded from: {model_path}")
+                                return model
+                            except Exception as e2:
+                                st.warning(f"⚠️ Failed to load from {model_path}: Keras error: {str(e1)}, SavedModel error: {str(e2)}")
+                                continue
             except Exception as e:
                 st.warning(f"⚠️ Failed to load from {model_path}: {str(e)}")
                 continue
     
-    st.info("ℹ️ Harvard FaceAge model not available - using DeepFace only")
+    st.warning("⚠️ Harvard FaceAge model not available - using DeepFace only")
     return None
 
 @st.cache_resource
@@ -207,18 +246,18 @@ def test_deepface_cloud():
         return False
 
 # Initialize session state
-if 'cloud_init' not in st.session_state:
-    st.session_state.cloud_init = False
+if 'models_loaded' not in st.session_state:
+    st.session_state.models_loaded = False
     st.session_state.detector = None
     st.session_state.harvard_model = None
     st.session_state.deepface_ok = False
 
-def cloud_init():
-    """Cloud-optimized initialization"""
-    if st.session_state.cloud_init:
+def lazy_load_models():
+    """Lazy load models only when user uploads an image"""
+    if st.session_state.models_loaded:
         return True
     
-    with st.spinner("🔄 Initializing for cloud..."):
+    with st.spinner("🔄 Loading AI models... This may take a moment."):
         try:
             # Step 1: Face detector (essential)
             st.session_state.detector = init_face_detector()
@@ -232,22 +271,24 @@ def cloud_init():
                 st.error("❌ DeepFace failed - app cannot continue")
                 return False
             
-            # Step 3: Harvard model (optional, disabled in cloud)
-            if not IS_CLOUD:
-                st.session_state.harvard_model = load_harvard_model()
+            # Step 3: Harvard model (optional but now enabled for cloud)
+            st.session_state.harvard_model = load_harvard_model()
             
-            st.session_state.cloud_init = True
+            st.session_state.models_loaded = True
             
             # Success message
             models_msg = "DeepFace"
             if st.session_state.harvard_model:
                 models_msg += " + Harvard"
-            st.success(f"✅ Ready! Using {models_msg}")
+            st.success(f"✅ Ready! Using {models_msg} models")
+            
+            # Memory cleanup
+            gc.collect()
             
             return True
             
         except Exception as e:
-            st.error(f"❌ Initialization failed: {str(e)}")
+            st.error(f"❌ Model loading failed: {str(e)}")
             return False
 
 # Main interface
@@ -261,9 +302,9 @@ uploaded_file = st.file_uploader(
 )
 
 if uploaded_file is not None:
-    # Initialize only when needed
-    if not cloud_init():
-        st.error("❌ Failed to initialize. Please refresh the page.")
+    # Lazy load models only when user uploads an image
+    if not lazy_load_models():
+        st.error("❌ Failed to load models. Please refresh the page.")
         st.stop()
     
     # Display image
@@ -291,9 +332,9 @@ if uploaded_file is not None:
                     # Extract face
                     face_crop = img_array[y:y+h, x:x+w]
                     
-                    # Try Harvard model first (local only)
+                    # Try Harvard model first (now enabled for cloud)
                     harvard_age = None
-                    if not IS_CLOUD and st.session_state.harvard_model is not None:
+                    if st.session_state.harvard_model is not None:
                         try:
                             # Prepare face for Harvard model
                             face_resized_harvard = cv2.resize(face_crop, (160, 160))
@@ -419,6 +460,6 @@ if uploaded_file is not None:
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666; font-size: 0.9rem;'>
-    <p>🔬 AI-Powered Age Estimation • 🌟 Cloud Optimized</p>
+    <p>🔬 AI-Powered Age Estimation • 🌟 Cloud Optimized • 🎯 Harvard + DeepFace</p>
 </div>
 """, unsafe_allow_html=True) 
