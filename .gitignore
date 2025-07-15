@@ -1,29 +1,49 @@
-# Python virtual environments
-faceage_env/
-.venv/
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
 venv/
+env/
 ENV/
 
-# Model files and large archives
-model_saved_tf/
-*.h5
-*.tar.gz
-*.zip
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
-# Output and result images (keep only if needed for demo)
-*.png
-*.jpg
-outputs/
-FaceAge/outputs/
-FaceAge/data/test_images/
-
-# System and cache files
+# OS
 .DS_Store
-__pycache__/
-*.pyc
+Thumbs.db
 
-# Jupyter/IPython checkpoints
-.ipynb_checkpoints/
+# Model files (these will be downloaded)
+model_saved_tf/
+model_saved_tf.zip
+temp_face_*.jpg
 
-# Misc
-*.log 
+# DeepFace cache
+.deepface/
+
+# Streamlit
+.streamlit/secrets.toml 
