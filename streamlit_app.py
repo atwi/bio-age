@@ -2,21 +2,37 @@ import streamlit as st
 import numpy as np
 import cv2
 from PIL import Image
-import matplotlib
-matplotlib.use('Agg')  # Use non-interactive backend for cloud environments
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
 from mtcnn import MTCNN
 
-# Suppress TensorFlow warnings for cloud deployment
+# Cloud-specific optimizations
 import os
 import sys
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+import gc  # Garbage collection for memory management
+import psutil  # Memory monitoring
 import warnings
 warnings.filterwarnings('ignore')
 
+# Detect cloud environment early
+IS_CLOUD = (
+    'STREAMLIT_CLOUD' in os.environ or 
+    'HOSTNAME' in os.environ or 
+    'DYNO' in os.environ or
+    'RAILWAY_ENVIRONMENT' in os.environ
+)
+
+# Suppress TensorFlow warnings aggressively for cloud
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+
+if IS_CLOUD:
+    # Cloud-specific environment settings
+    os.environ['CUDA_VISIBLE_DEVICES'] = '-1'  # Force CPU usage
+    os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
+
 try:
     import tensorflow as tf
+    tf.get_logger().setLevel('ERROR')
+    
     import keras
     import zipfile
     import gdown
@@ -27,14 +43,17 @@ try:
     tf_version = tf.__version__
     keras_version = keras.__version__
     
-    if not tf_version.startswith('2.13'):
-        st.warning(f"⚠️ TensorFlow version {tf_version} detected. Expected 2.13.x")
-    
-    if not keras_version.startswith('2.13'):
-        st.warning(f"⚠️ Keras version {keras_version} detected. Expected 2.13.x")
+    # Only show version warnings locally, not in cloud
+    if not IS_CLOUD:
+        if not tf_version.startswith('2.13'):
+            st.warning(f"⚠️ TensorFlow version {tf_version} detected. Expected 2.13.x")
+        
+        if not keras_version.startswith('2.13'):
+            st.warning(f"⚠️ Keras version {keras_version} detected. Expected 2.13.x")
         
 except ImportError as e:
     st.error(f"❌ Import error: {e}")
+    st.error("Please check your requirements.txt file.")
     st.stop()
 
 # Page configuration for mobile
@@ -45,114 +64,74 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Cloud environment configuration
-if 'STREAMLIT_CLOUD' in os.environ or 'HOSTNAME' in os.environ:
-    # Running on Streamlit Cloud
+# Cloud environment info
+if IS_CLOUD:
     st.info("🌟 Running on Streamlit Cloud")
-    # Additional cloud-specific configurations can go here
     
-    # Add a flag to track initialization
-    if 'app_initialized' not in st.session_state:
-        st.session_state.app_initialized = False
+    # Memory monitoring for cloud
+    try:
+        memory_info = psutil.virtual_memory()
+        st.caption(f"Memory: {memory_info.percent}% used")
+    except:
+        pass
 
-# Custom CSS for mobile optimization
+# Streamlined CSS for cloud
 st.markdown("""
 <style>
-    .main {
-        padding: 1rem;
-    }
-    .stButton > button {
-        width: 100%;
-        height: 3rem;
-        font-size: 1.2rem;
-        border-radius: 10px;
-        background-color: #FF6B6B;
-        color: white;
-        border: none;
-    }
-    .stButton > button:hover {
-        background-color: #FF5252;
-    }
-    .uploadedFile {
-        border-radius: 10px;
-        padding: 1rem;
-        background-color: #f0f2f6;
-    }
-    .stMarkdown {
-        font-size: 1.1rem;
-    }
-    @media (max-width: 768px) {
-        .main {
-            padding: 0.5rem;
-        }
-        .stButton > button {
-            height: 2.5rem;
-            font-size: 1rem;
-        }
-    }
+    .main { padding: 0.5rem; }
+    .stButton > button { width: 100%; height: 3rem; border-radius: 10px; }
+    @media (max-width: 768px) { .main { padding: 0.25rem; } }
 </style>
 """, unsafe_allow_html=True)
 
 # App header
 st.title("📱 Facial Age Estimator")
-st.markdown("**Estimate the biological age of your face from facial images**")
+st.markdown("**Estimate biological age from facial features**")
 
+# Cloud-optimized model handling
 MODEL_ZIP = "model_saved_tf.zip"
 MODEL_DIR = "model_saved_tf"
 GDRIVE_FILE_ID = "12wNpYBz3j5mP9mt6S_ZH4k0sI6dVDeVV"
 
-def download_and_extract_model():
+@st.cache_resource
+def download_harvard_model():
+    """Download Harvard model with cloud optimizations"""
+    if IS_CLOUD:
+        st.info("⚠️ Harvard model download disabled in cloud to prevent timeouts")
+        return False
+    
     if not os.path.exists(MODEL_DIR):
-        url = f"https://drive.google.com/uc?id={GDRIVE_FILE_ID}"
-        
-        # Show progress for cloud deployment
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        status_text.text("📥 Downloading FaceAge model...")
-        progress_bar.progress(10)
-        
         try:
-            # Download with retry logic for cloud environments
-            gdown.download(url, MODEL_ZIP, quiet=False)
-            progress_bar.progress(50)
+            url = f"https://drive.google.com/uc?id={GDRIVE_FILE_ID}"
             
-            status_text.text("📦 Extracting model...")
-            # Extract the model
-            with zipfile.ZipFile(MODEL_ZIP, "r") as zip_ref:
-                zip_ref.extractall(".")
-            progress_bar.progress(80)
-            
-            status_text.text("🧹 Cleaning up...")
-            # Clean up zip file
-            if os.path.exists(MODEL_ZIP):
-                os.remove(MODEL_ZIP)
-            progress_bar.progress(100)
-            
-            status_text.text("✅ Model ready!")
-            st.success("Harvard FaceAge model downloaded and extracted!")
+            with st.spinner("📥 Downloading model..."):
+                gdown.download(url, MODEL_ZIP, quiet=True)
+                
+                with zipfile.ZipFile(MODEL_ZIP, "r") as zip_ref:
+                    zip_ref.extractall(".")
+                
+                if os.path.exists(MODEL_ZIP):
+                    os.remove(MODEL_ZIP)
+                    
+            st.success("✅ Model downloaded!")
+            return True
             
         except Exception as e:
-            progress_bar.empty()
-            status_text.empty()
-            st.error(f"❌ Failed to download Harvard model: {str(e)}")
-            st.info("💡 The app will continue with DeepFace only.")
-        finally:
-            # Clean up progress indicators
-            progress_bar.empty()
-            status_text.empty()
+            st.warning(f"⚠️ Model download failed: {str(e)}")
+            return False
+    
+    return True
 
-# Download model if needed
-try:
-    with st.spinner("Checking model files..."):
-        download_and_extract_model()
-except Exception as e:
-    st.error(f"❌ Model download failed: {str(e)}")
-    st.info("💡 Continuing with DeepFace only...")
-
-# Load model with caching
 @st.cache_resource
-def load_faceage_saved_model():
+def load_harvard_model():
+    """Load Harvard model with cloud safeguards"""
+    if IS_CLOUD:
+        st.info("ℹ️ Harvard model disabled in cloud environment")
+        return None
+    
+    if not download_harvard_model():
+        return None
+    
     # Try different possible paths for the model
     possible_paths = [
         "FaceAge/models/model_saved_tf",
@@ -167,14 +146,14 @@ def load_faceage_saved_model():
                 if model_path.endswith('.h5'):
                     # Load Keras .h5 model
                     model = keras.models.load_model(model_path)
-                    st.success(f"✅ Model loaded from: {model_path}")
+                    st.success(f"✅ Harvard model loaded from: {model_path}")
                     return model
                 else:
                     # Load TensorFlow SavedModel (compatible with TF 2.13.0)
                     try:
                         # Try loading as Keras model first
                         model = tf.keras.models.load_model(model_path)
-                        st.success(f"✅ Model loaded from: {model_path}")
+                        st.success(f"✅ Harvard model loaded from: {model_path}")
                         return model
                     except Exception as e1:
                         # Fallback to SavedModel loading
@@ -192,459 +171,254 @@ def load_faceage_saved_model():
     st.info("ℹ️ Harvard FaceAge model not available - using DeepFace only")
     return None
 
-# Load models with comprehensive error handling
-if not st.session_state.get('app_initialized', False):
-    with st.spinner("Loading AI models..."):
-        try:
-            # Step 1: Load Harvard FaceAge model
-            with st.spinner("Loading Harvard FaceAge model..."):
-                harvard_model = load_faceage_saved_model()
-                
-            if harvard_model is None:
-                st.info("📱 Using DeepFace for age estimation (good for all ages, especially younger faces)")
-            else:
-                st.success("🎯 Using both Harvard FaceAge and DeepFace models")
-            
-            # Step 2: Initialize face detector
-            with st.spinner("Initializing face detection..."):
-                detector = MTCNN()
-                st.success("✅ Face detection ready (MTCNN)")
-            
-            # Step 3: Test DeepFace with multiple attempts
-            with st.spinner("Testing DeepFace age estimation..."):
-                test_success = False
-                for attempt in range(3):
-                    try:
-                        test_face = np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8)
-                        DeepFace.analyze(test_face, actions=['age'], enforce_detection=False)
-                        st.success("✅ DeepFace age estimation ready")
-                        test_success = True
-                        break
-                    except Exception as e:
-                        if attempt == 2:  # Last attempt
-                            st.error(f"❌ DeepFace failed after 3 attempts: {str(e)}")
-                            st.warning("🚨 Switching to emergency mode...")
-                            st.session_state.emergency_mode = True
-                            st.rerun()
-                        else:
-                            st.warning(f"⚠️ DeepFace attempt {attempt + 1} failed, retrying...")
-                            time.sleep(1)
-                
-                if not test_success:
-                    st.error("❌ DeepFace initialization failed")
-                    st.warning("🚨 Switching to emergency mode...")
-                    st.session_state.emergency_mode = True
-                    st.rerun()
-            
-            # Mark as initialized
-            st.session_state.app_initialized = True
-            st.session_state.harvard_model = harvard_model
-            st.session_state.detector = detector
-            
-            st.success("🎉 All models loaded successfully!")
-            
-        except Exception as e:
-            st.error(f"❌ Critical error during model loading: {str(e)}")
-            st.code(f"Error details: {str(e)}")
-            st.warning("🚨 Switching to emergency mode...")
-            st.session_state.emergency_mode = True
-            st.rerun()
-else:
-    # Models already loaded, get from session state
-    harvard_model = st.session_state.harvard_model
-    detector = st.session_state.detector
-    st.success("✅ Models loaded from cache")
-
-# Debug mode - add ?debug=true to URL to enable
-query_params = st.query_params
-if query_params.get('debug') == 'true':
-    st.title("🔍 Debug Mode - Facial Age Estimator")
-    st.warning("Debug mode is enabled. This will show detailed information about the app state.")
-    
-    # Show environment info
-    st.subheader("🌍 Environment")
-    st.write(f"Python version: {sys.version}")
-    st.write(f"Streamlit version: {st.__version__}")
-    st.write(f"TensorFlow version: {tf.__version__}")
-    st.write(f"Keras version: {keras.__version__}")
-    
-    # Show session state
-    st.subheader("📊 Session State")
-    st.write(f"App initialized: {st.session_state.get('app_initialized', False)}")
-    st.write(f"Emergency mode: {st.session_state.get('emergency_mode', False)}")
-    
-    # Test individual components
-    st.subheader("🧪 Component Tests")
-    
-    # Test imports
-    try:
-        import tensorflow as tf
-        import keras
-        from deepface import DeepFace
-        from mtcnn import MTCNN
-        st.success("✅ All imports successful")
-    except Exception as e:
-        st.error(f"❌ Import failed: {e}")
-    
-    # Test DeepFace
-    try:
-        test_face = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
-        result = DeepFace.analyze(test_face, actions=['age'], enforce_detection=False)
-        st.success("✅ DeepFace working")
-    except Exception as e:
-        st.error(f"❌ DeepFace failed: {e}")
-    
-    # Test MTCNN
+@st.cache_resource
+def init_face_detector():
+    """Initialize face detector with error handling"""
     try:
         detector = MTCNN()
-        st.success("✅ MTCNN working")
+        return detector
     except Exception as e:
-        st.error(f"❌ MTCNN failed: {e}")
-    
-    # Reset buttons
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("🔄 Reset App State"):
-            st.session_state.clear()
-            st.rerun()
-    
-    with col2:
-        if st.button("🚨 Enable Emergency Mode"):
-            st.session_state.emergency_mode = True
-            st.rerun()
-    
-    st.stop()  # Don't run the rest of the app in debug mode
+        st.error(f"❌ Face detector failed: {str(e)}")
+        return None
 
-# Add emergency fallback in case of critical failures
-if 'emergency_mode' not in st.session_state:
-    st.session_state.emergency_mode = False
+@st.cache_resource
+def test_deepface_cloud():
+    """Test DeepFace with cloud-specific settings"""
+    try:
+        # Create minimal test image
+        test_img = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
+        
+        # Cloud-optimized DeepFace call
+        result = DeepFace.analyze(
+            test_img,
+            actions=['age'],
+            enforce_detection=False,
+            silent=True
+        )
+        
+        # Force garbage collection
+        del test_img, result
+        gc.collect()
+        
+        return True
+        
+    except Exception as e:
+        st.error(f"❌ DeepFace test failed: {str(e)}")
+        return False
 
-# If in emergency mode, show a simplified interface
-if st.session_state.emergency_mode:
-    st.title("🚨 Emergency Mode - Basic Face Age Estimation")
-    st.warning("⚠️ Some models failed to load. Using simplified DeepFace-only mode.")
+# Initialize session state
+if 'cloud_init' not in st.session_state:
+    st.session_state.cloud_init = False
+    st.session_state.detector = None
+    st.session_state.harvard_model = None
+    st.session_state.deepface_ok = False
+
+def cloud_init():
+    """Cloud-optimized initialization"""
+    if st.session_state.cloud_init:
+        return True
     
-    uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
-    
-    if uploaded_file is not None:
+    with st.spinner("🔄 Initializing for cloud..."):
         try:
-            image = Image.open(uploaded_file).convert("RGB")
-            st.image(image, caption="Uploaded image", use_container_width=True)
+            # Step 1: Face detector (essential)
+            st.session_state.detector = init_face_detector()
+            if st.session_state.detector is None:
+                st.error("❌ Face detection failed - app cannot continue")
+                return False
             
-            # Simple DeepFace analysis
-            img_array = np.array(image)
-            result = DeepFace.analyze(img_array, actions=['age'], enforce_detection=False)
+            # Step 2: Test DeepFace (essential)
+            st.session_state.deepface_ok = test_deepface_cloud()
+            if not st.session_state.deepface_ok:
+                st.error("❌ DeepFace failed - app cannot continue")
+                return False
             
-            if isinstance(result, list):
-                age = result[0]['age']
-            else:
-                age = result['age']
-                
-            st.success(f"🎯 Estimated age: {age:.1f} years")
+            # Step 3: Harvard model (optional, disabled in cloud)
+            if not IS_CLOUD:
+                st.session_state.harvard_model = load_harvard_model()
+            
+            st.session_state.cloud_init = True
+            
+            # Success message
+            models_msg = "DeepFace"
+            if st.session_state.harvard_model:
+                models_msg += " + Harvard"
+            st.success(f"✅ Ready! Using {models_msg}")
+            
+            return True
             
         except Exception as e:
-            st.error(f"❌ Analysis failed: {str(e)}")
-    
-    st.stop()  # Don't run the rest of the app
-    
+            st.error(f"❌ Initialization failed: {str(e)}")
+            return False
+
 # Main interface
-st.markdown("### 📸 Upload a photo or take a new one")
+st.markdown("### 📸 Upload Your Photo")
 
+# Simplified upload (cloud-friendly)
+uploaded_file = st.file_uploader(
+    "Choose an image",
+    type=["jpg", "jpeg", "png"],
+    help="Upload a clear photo with visible face(s)"
+)
 
-# Add tabs for upload and camera
-upload_tab, camera_tab = st.tabs(["Upload Image", "Take Photo"])
-
-with upload_tab:
-    uploaded_file = st.file_uploader(
-        "Choose an image", 
-        type=["jpg", "jpeg", "png"],
-        help="Upload a clear photo of a face"
-    )
-
-with camera_tab:
-    camera_image = st.camera_input("Take a photo")
-
-# Use whichever is provided
-image_source = uploaded_file if uploaded_file is not None else camera_image
-
-if image_source is not None:
-    # Display original image
-    st.markdown("### 📷 Original Image")
-    image = Image.open(image_source).convert("RGB")
-    st.image(image, caption="Uploaded image", use_container_width=True)
+if uploaded_file is not None:
+    # Initialize only when needed
+    if not cloud_init():
+        st.error("❌ Failed to initialize. Please refresh the page.")
+        st.stop()
     
-    # Process image
-    with st.spinner("Analyzing face..."):
-        img_np = np.array(image)
-        faces = detector.detect_faces(img_np)
+    # Display image
+    try:
+        image = Image.open(uploaded_file).convert("RGB")
+        st.image(image, caption="Your photo", use_container_width=True)
         
-        if not faces:
-            st.error("❌ No face detected in this image.")
-            st.info("💡 Try uploading a clearer photo with a visible face.")
-        else:
-            st.success(f"✅ Detected {len(faces)} face(s)")
+        # Process with cloud optimizations
+        with st.spinner("🔍 Analyzing faces..."):
+            img_array = np.array(image)
             
-            # Create results display
-            try:
-                fig, ax = plt.subplots(figsize=(8, 8))
-                ax.imshow(img_np)
+            # Face detection
+            faces = st.session_state.detector.detect_faces(img_array)
+            
+            if not faces:
+                st.error("❌ No face detected. Please try a clearer photo.")
+            else:
+                st.success(f"✅ Found {len(faces)} face(s)")
                 
-                results = []
+                # Process each face
                 for i, face in enumerate(faces):
                     x, y, w, h = face['box']
-                    x, y = abs(x), abs(y)
-                    x2, y2 = x + w, y + h
+                    x, y = max(0, x), max(0, y)
                     
-                    # Draw bounding box
-                    rect = patches.Rectangle((x, y), w, h, linewidth=3, 
-                                           edgecolor='#FF6B6B', facecolor='none')
-                    ax.add_patch(rect)
+                    # Extract face
+                    face_crop = img_array[y:y+h, x:x+w]
                     
-                    # Process face for age estimation
-                    face_crop = img_np[y:y2, x:x2]
-                    
-                    # Harvard FaceAge model prediction
-                    if harvard_model is not None:
-                        face_resized = cv2.resize(face_crop, (160, 160))
-                        face_pil = Image.fromarray(face_resized).convert('RGB')
-                        face_array = np.asarray(face_pil)
-                        mean, std = face_array.mean(), face_array.std()
-                        face_normalized = (face_array - mean) / std
-                        face_input = face_normalized.reshape(1, 160, 160, 3)
-                        
-                        # Predict age with Harvard model
+                    # Try Harvard model first (local only)
+                    harvard_age = None
+                    if not IS_CLOUD and st.session_state.harvard_model is not None:
                         try:
-                            # Handle different model types
-                            if hasattr(harvard_model, 'predict'):
-                                # Standard Keras model
-                                prediction = harvard_model.predict(face_input)
-                                harvard_age = float(np.squeeze(prediction))
-                            elif hasattr(harvard_model, 'signatures'):
-                                # SavedModel format
-                                signature = harvard_model.signatures['serving_default']
-                                prediction = signature(tf.constant(face_input, dtype=tf.float32))
-                                if isinstance(prediction, dict):
-                                    age_prediction = list(prediction.values())[0]
+                            # Prepare face for Harvard model
+                            face_resized_harvard = cv2.resize(face_crop, (160, 160))
+                            face_pil = Image.fromarray(face_resized_harvard).convert('RGB')
+                            face_array = np.asarray(face_pil)
+                            mean, std = face_array.mean(), face_array.std()
+                            # Prevent division by zero
+                            if std == 0:
+                                std = 1
+                            face_normalized = (face_array - mean) / std
+                            face_input = face_normalized.reshape(1, 160, 160, 3)
+                            
+                            # Predict age with Harvard model
+                            try:
+                                # Handle different model types
+                                if hasattr(st.session_state.harvard_model, 'predict'):
+                                    # Standard Keras model
+                                    prediction = st.session_state.harvard_model.predict(face_input, verbose=0)
+                                    harvard_age = float(np.squeeze(prediction))
+                                elif hasattr(st.session_state.harvard_model, 'signatures'):
+                                    # SavedModel format
+                                    signature = st.session_state.harvard_model.signatures['serving_default']
+                                    prediction = signature(tf.constant(face_input, dtype=tf.float32))
+                                    if isinstance(prediction, dict):
+                                        age_prediction = list(prediction.values())[0]
+                                    else:
+                                        age_prediction = prediction
+                                    harvard_age = float(np.squeeze(age_prediction))
                                 else:
-                                    age_prediction = prediction
-                                harvard_age = float(np.squeeze(age_prediction))
-                            else:
-                                # Fallback - try direct call
-                                prediction = harvard_model(face_input)
-                                if isinstance(prediction, dict):
-                                    age_prediction = list(prediction.values())[0]
-                                else:
-                                    age_prediction = prediction
-                                harvard_age = float(np.squeeze(age_prediction))
+                                    # Fallback - try direct call
+                                    prediction = st.session_state.harvard_model(face_input)
+                                    if isinstance(prediction, dict):
+                                        age_prediction = list(prediction.values())[0]
+                                    else:
+                                        age_prediction = prediction
+                                    harvard_age = float(np.squeeze(age_prediction))
+                                
+                                # Clamp age to reasonable range
+                                harvard_age = max(0, min(120, harvard_age))
+                                
+                            except Exception as e:
+                                st.warning(f"⚠️ Harvard model prediction failed for face {i+1}: {str(e)}")
+                                harvard_age = None
                         except Exception as e:
-                            st.warning(f"⚠️ Harvard model prediction failed: {str(e)}")
+                            st.warning(f"⚠️ Harvard model preprocessing failed for face {i+1}: {str(e)}")
                             harvard_age = None
-                    else:
-                        harvard_age = None
                     
-                    # DeepFace age prediction
+                    # DeepFace analysis (cloud-optimized)
                     deepface_age = None
                     try:
-                        # Ensure face crop is in correct format for DeepFace
-                        if face_crop.shape[0] < 20 or face_crop.shape[1] < 20:
-                            # Skip if face is too small
-                            st.info(f"Face {i+1} too small for DeepFace analysis")
-                        else:
-                            # Resize face crop to a standard size for DeepFace (do this first)
+                        if face_crop.shape[0] > 20 and face_crop.shape[1] > 20:
+                            # Resize for consistency
                             face_resized = cv2.resize(face_crop, (224, 224))
+                            face_resized = np.clip(face_resized, 0, 255).astype(np.uint8)
                             
-                            # Ensure proper data type and range
-                            if face_resized.dtype != np.uint8:
-                                face_resized = face_resized.astype(np.uint8)
+                            # Analyze with DeepFace
+                            result = DeepFace.analyze(
+                                face_resized,
+                                actions=['age'],
+                                enforce_detection=False,
+                                silent=True
+                            )
                             
-                            # Ensure values are in proper range [0, 255]
-                            face_resized = np.clip(face_resized, 0, 255)
+                            # Extract age
+                            if isinstance(result, list):
+                                deepface_age = result[0]['age']
+                            else:
+                                deepface_age = result['age']
                             
-                            # Method 1: Direct numpy array analysis (preferred)
-                            try:
-                                # Try direct numpy array analysis first
-                                if len(face_resized.shape) == 3 and face_resized.shape[2] == 3:
-                                    deepface_result = DeepFace.analyze(face_resized, actions=['age'], enforce_detection=False)
-                                    
-                                    if isinstance(deepface_result, list):
-                                        deepface_age = deepface_result[0]['age']
-                                    else:
-                                        deepface_age = deepface_result['age']
-                                        
-                                    st.info(f"✅ DeepFace analysis successful for face {i+1}: {deepface_age:.1f} years")
-                                else:
-                                    raise ValueError("Invalid face format")
-                                    
-                            except Exception as e1:
-                                # Method 2: File-based analysis (fallback)
-                                try:
-                                    st.info(f"Trying file-based analysis for face {i+1}...")
-                                    temp_path = f"temp_face_{i}.jpg"
-                                    temp_image = Image.fromarray(face_resized)
-                                    temp_image.save(temp_path)
-                                    
-                                    # Analyze with DeepFace
-                                    deepface_result = DeepFace.analyze(temp_path, actions=['age'], enforce_detection=False)
-                                    
-                                    # Clean up temp file
-                                    if os.path.exists(temp_path):
-                                        os.remove(temp_path)
-                                    
-                                    if isinstance(deepface_result, list):
-                                        deepface_age = deepface_result[0]['age']
-                                    else:
-                                        deepface_age = deepface_result['age']
-                                        
-                                    st.info(f"✅ DeepFace file analysis successful for face {i+1}: {deepface_age:.1f} years")
-                                    
-                                except Exception as e2:
-                                    # Clean up temp file if it exists
-                                    temp_path = f"temp_face_{i}.jpg"
-                                    if os.path.exists(temp_path):
-                                        os.remove(temp_path)
-                                    st.error(f"❌ Both DeepFace methods failed for face {i+1}")
-                                    st.error(f"   Direct analysis error: {str(e1)}")
-                                    st.error(f"   File analysis error: {str(e2)}")
-                                    deepface_age = None
-                                    
-                    except Exception as e:
-                        # Final catch-all
-                        st.error(f"❌ DeepFace analysis completely failed for face {i+1}: {str(e)}")
-                        deepface_age = None
-                    
-                    # Age group classification (using Harvard age as primary, DeepFace as fallback)
-                    primary_age = harvard_age if harvard_age is not None else deepface_age
-                    
-                    if primary_age is not None:
-                        if primary_age < 30:
-                            color = '#4CAF50'
-                            age_group = "Young"
-                            emoji = "😊"
-                        elif primary_age < 50:
-                            color = '#FF9800'
-                            age_group = "Adult"
-                            emoji = "😐"
+                            # Clamp to reasonable range
+                            deepface_age = max(10, min(100, deepface_age))
+                            
+                            # Clean up memory
+                            del face_resized, result
+                            gc.collect()
+                            
                         else:
-                            color = '#F44336'
-                            age_group = "Senior"
-                            emoji = "👴"
-                    else:
-                        color = '#666666'
-                        age_group = "Unknown"
-                        emoji = "❓"
+                            st.warning(f"Face {i+1} too small to analyze")
+                            
+                    except Exception as e:
+                        st.error(f"❌ DeepFace failed for face {i+1}: {str(e)}")
                     
-                    # Add annotation with both ages
-                    harvard_text = f"{harvard_age:.1f}y" if harvard_age is not None else "N/A"
-                    deepface_text = f"{deepface_age:.1f}y" if deepface_age is not None else "N/A"
-                    annotation_text = f"{emoji} Harvard: {harvard_text} | DeepFace: {deepface_text}"
+                    # Display results
+                    col1, col2 = st.columns([1, 2])
                     
-                    ax.text(x, y-15, annotation_text, 
-                           color=color, fontsize=12, weight='bold',
-                           bbox=dict(boxstyle="round,pad=0.5", facecolor='white', alpha=0.9))
+                    with col1:
+                        face_pil = Image.fromarray(face_crop)
+                        st.image(face_pil, caption=f"Face {i+1}", width=150)
                     
-                    results.append({
-                        'face_num': i+1,
-                        'harvard_age': harvard_age,
-                        'deepface_age': deepface_age,
-                        'group': age_group,
-                        'confidence': face['confidence']
-                    })
+                    with col2:
+                        # Show both ages if available
+                        if harvard_age is not None:
+                            st.metric("🎯 Harvard Age", f"{harvard_age:.1f} years")
+                        if deepface_age is not None:
+                            st.metric("🤖 DeepFace Age", f"{deepface_age:.1f} years")
+                        
+                        st.metric("Detection Confidence", f"{face['confidence']:.2f}")
+                        
+                        # Use Harvard age as primary, DeepFace as fallback
+                        primary_age = harvard_age if harvard_age is not None else deepface_age
+                        
+                        if primary_age is not None:
+                            if primary_age < 30:
+                                st.success("😊 Young")
+                            elif primary_age < 50:
+                                st.info("😐 Adult")
+                            else:
+                                st.warning("👴 Senior")
+                        else:
+                            st.error("❓ Could not determine age")
+                    
+                    st.markdown("---")
                 
-                ax.axis('off')
-                st.pyplot(fig)
-                plt.close(fig)  # Close figure to prevent memory leaks
+                # Clean up memory
+                del img_array, faces
+                gc.collect()
                 
-            except Exception as plot_error:
-                st.error(f"❌ Error creating visualization: {str(plot_error)}")
-                # Close figure if it exists
-                try:
-                    plt.close(fig)
-                except:
-                    pass
-                # Continue with results even if plotting fails
-                results = []  # Ensure results is defined
-                
-            # Results summary
-            st.markdown("### 📊 Analysis Results")
-            for result in results:
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.metric("Face", f"#{result['face_num']}")
-                with col2:
-                    if result['harvard_age'] is not None:
-                        st.metric("Harvard Age", f"{result['harvard_age']:.1f} years")
-                    else:
-                        st.metric("Harvard Age", "N/A")
-                with col3:
-                    if result['deepface_age'] is not None:
-                        st.metric("DeepFace Age", f"{result['deepface_age']:.1f} years")
-                    else:
-                        st.metric("DeepFace Age", "N/A")
-                with col4:
-                    st.metric("Group", result['group'])
-            
-            # Download results
-            st.markdown("### 💾 Download Results")
-            results_text = f"FaceAge Analysis Results\n\n"
-            for result in results:
-                harvard_text = f"{result['harvard_age']:.1f}" if result['harvard_age'] is not None else "N/A"
-                deepface_text = f"{result['deepface_age']:.1f}" if result['deepface_age'] is not None else "N/A"
-                results_text += f"Face #{result['face_num']}: Harvard: {harvard_text} years | DeepFace: {deepface_text} years ({result['group']})\n"
-            
-            st.download_button(
-                label="📥 Download Results",
-                data=results_text,
-                file_name="faceage_results.txt",
-                mime="text/plain"
-            )
+    except Exception as e:
+        st.error(f"❌ Processing failed: {str(e)}")
+        st.error("Please try a different image or refresh the page.")
 
 # Footer
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666; font-size: 0.9rem;'>
-    <p>🔬 Powered by AI • 📱 Mobile Optimized • 🔒 Privacy Focused</p>
-    <p>This app estimates biological age from facial features using machine learning.</p>
+    <p>🔬 AI-Powered Age Estimation • 🌟 Cloud Optimized</p>
 </div>
 """, unsafe_allow_html=True) 
-
-def simple_age_estimation(face_crop):
-    """
-    Simple age estimation based on facial features analysis
-    This is a basic heuristic approach that doesn't require large models
-    """
-    try:
-        # Convert to grayscale for analysis
-        gray = cv2.cvtColor(face_crop, cv2.COLOR_RGB2GRAY)
-        
-        # Basic feature analysis
-        height, width = gray.shape
-        
-        # Analyze skin texture (higher variance = older)
-        skin_variance = np.var(gray)
-        
-        # Analyze contrast (wrinkles create more contrast)
-        contrast = gray.std()
-        
-        # Analyze edge density (more edges = more wrinkles)
-        edges = cv2.Canny(gray, 50, 150)
-        edge_density = np.sum(edges > 0) / (height * width)
-        
-        # Simple heuristic formula (calibrated for reasonable results)
-        base_age = 25  # Starting point
-        
-        # Adjust based on features
-        age_adjustment = 0
-        age_adjustment += min(skin_variance / 100, 20)  # Skin texture contribution
-        age_adjustment += min(contrast / 10, 15)        # Contrast contribution  
-        age_adjustment += min(edge_density * 200, 25)   # Edge density contribution
-        
-        estimated_age = base_age + age_adjustment
-        
-        # Clamp to reasonable range
-        estimated_age = max(18, min(80, estimated_age))
-        
-        return estimated_age
-        
-    except Exception as e:
-        # Return a default age if analysis fails
-        return 35.0 
