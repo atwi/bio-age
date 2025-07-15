@@ -3,7 +3,7 @@ tensorflow==2.19.0
 opencv-python==4.12.0.88
 mtcnn==1.0.0
 matplotlib==3.10.3
-pillow==11.2.1
+pillow==10.3.0
 numpy==2.1.3
 pandas==2.2.3
 seaborn==0.13.2
