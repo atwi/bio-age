@@ -109,21 +109,11 @@ def download_harvard_model():
             status_text.text("🔄 Initializing download...")
             progress_bar.progress(10)
             
-            # Download with timeout for cloud
-            import signal
-            
-            def timeout_handler(signum, frame):
-                raise TimeoutError("Download timeout")
-            
-            # Set timeout for cloud (5 minutes)
-            if IS_CLOUD:
-                signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(300)  # 5 minutes
-            
             try:
                 status_text.text("📥 Downloading Harvard model (85MB)...")
                 progress_bar.progress(30)
                 
+                # Use gdown with built-in timeout handling
                 gdown.download(url, MODEL_ZIP, quiet=True)
                 
                 status_text.text("📦 Extracting model...")
@@ -148,13 +138,12 @@ def download_harvard_model():
                 
                 return True
                 
-            finally:
-                if IS_CLOUD:
-                    signal.alarm(0)  # Cancel timeout
-                    
-        except TimeoutError:
-            st.warning("⏱️ Harvard model download timed out. Using DeepFace only.")
-            return False
+            except Exception as download_error:
+                progress_bar.empty()
+                status_text.empty()
+                st.warning(f"⚠️ Harvard model download failed: {str(download_error)}. Using DeepFace only.")
+                return False
+                     
         except Exception as e:
             st.warning(f"⚠️ Harvard model download failed: {str(e)}. Using DeepFace only.")
             return False
@@ -460,6 +449,6 @@ if uploaded_file is not None:
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666; font-size: 0.9rem;'>
-    <p>🔬 AI-Powered Age Estimation • 🌟 Cloud Optimized • 🎯 Harvard + DeepFace</p>
+    <p>🔬 AI-Powered Age Estimation • 🌟 Cloud Optimized • �� Harvard + DeepFace</p>
 </div>
 """, unsafe_allow_html=True) 
