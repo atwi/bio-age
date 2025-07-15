@@ -10,6 +10,7 @@ from mtcnn import MTCNN
 
 # Suppress TensorFlow warnings for cloud deployment
 import os
+import sys
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 import warnings
 warnings.filterwarnings('ignore')
@@ -19,6 +20,7 @@ try:
     import keras
     import zipfile
     import gdown
+    import time
     from deepface import DeepFace
     
     # Verify versions for cloud deployment
@@ -48,6 +50,10 @@ if 'STREAMLIT_CLOUD' in os.environ or 'HOSTNAME' in os.environ:
     # Running on Streamlit Cloud
     st.info("🌟 Running on Streamlit Cloud")
     # Additional cloud-specific configurations can go here
+    
+    # Add a flag to track initialization
+    if 'app_initialized' not in st.session_state:
+        st.session_state.app_initialized = False
 
 # Custom CSS for mobile optimization
 st.markdown("""
@@ -137,8 +143,12 @@ def download_and_extract_model():
             status_text.empty()
 
 # Download model if needed
-with st.spinner("Checking model files..."):
-    download_and_extract_model()
+try:
+    with st.spinner("Checking model files..."):
+        download_and_extract_model()
+except Exception as e:
+    st.error(f"❌ Model download failed: {str(e)}")
+    st.info("💡 Continuing with DeepFace only...")
 
 # Load model with caching
 @st.cache_resource
@@ -182,36 +192,161 @@ def load_faceage_saved_model():
     st.info("ℹ️ Harvard FaceAge model not available - using DeepFace only")
     return None
 
-# Load models
-with st.spinner("Loading AI models..."):
-    try:
-        harvard_model = load_faceage_saved_model()
-        # Don't stop if Harvard model fails - DeepFace can still work
-        
-        if harvard_model is None:
-            st.info("📱 Using DeepFace for age estimation (good for all ages, especially younger faces)")
-        else:
-            st.success("🎯 Using both Harvard FaceAge and DeepFace models")
-        
-        # Initialize face detector
-        detector = MTCNN()
-        st.success("✅ Face detection ready (MTCNN)")
-        
-        # Test DeepFace to ensure it's working
-        test_face = np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8)
+# Load models with comprehensive error handling
+if not st.session_state.get('app_initialized', False):
+    with st.spinner("Loading AI models..."):
         try:
-            DeepFace.analyze(test_face, actions=['age'], enforce_detection=False)
-            st.success("✅ DeepFace age estimation ready")
-        except Exception as e:
-            st.error(f"❌ DeepFace initialization failed: {str(e)}")
-            st.info("💡 Please refresh the page to try again")
-            st.stop()
+            # Step 1: Load Harvard FaceAge model
+            with st.spinner("Loading Harvard FaceAge model..."):
+                harvard_model = load_faceage_saved_model()
+                
+            if harvard_model is None:
+                st.info("📱 Using DeepFace for age estimation (good for all ages, especially younger faces)")
+            else:
+                st.success("🎯 Using both Harvard FaceAge and DeepFace models")
             
-    except Exception as e:
-        st.error(f"❌ Critical error during model loading: {str(e)}")
-        st.info("💡 Please refresh the page to try again")
-        st.stop()
+            # Step 2: Initialize face detector
+            with st.spinner("Initializing face detection..."):
+                detector = MTCNN()
+                st.success("✅ Face detection ready (MTCNN)")
+            
+            # Step 3: Test DeepFace with multiple attempts
+            with st.spinner("Testing DeepFace age estimation..."):
+                test_success = False
+                for attempt in range(3):
+                    try:
+                        test_face = np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8)
+                        DeepFace.analyze(test_face, actions=['age'], enforce_detection=False)
+                        st.success("✅ DeepFace age estimation ready")
+                        test_success = True
+                        break
+                    except Exception as e:
+                        if attempt == 2:  # Last attempt
+                            st.error(f"❌ DeepFace failed after 3 attempts: {str(e)}")
+                            st.warning("🚨 Switching to emergency mode...")
+                            st.session_state.emergency_mode = True
+                            st.rerun()
+                        else:
+                            st.warning(f"⚠️ DeepFace attempt {attempt + 1} failed, retrying...")
+                            time.sleep(1)
+                
+                if not test_success:
+                    st.error("❌ DeepFace initialization failed")
+                    st.warning("🚨 Switching to emergency mode...")
+                    st.session_state.emergency_mode = True
+                    st.rerun()
+            
+            # Mark as initialized
+            st.session_state.app_initialized = True
+            st.session_state.harvard_model = harvard_model
+            st.session_state.detector = detector
+            
+            st.success("🎉 All models loaded successfully!")
+            
+        except Exception as e:
+            st.error(f"❌ Critical error during model loading: {str(e)}")
+            st.code(f"Error details: {str(e)}")
+            st.warning("🚨 Switching to emergency mode...")
+            st.session_state.emergency_mode = True
+            st.rerun()
+else:
+    # Models already loaded, get from session state
+    harvard_model = st.session_state.harvard_model
+    detector = st.session_state.detector
+    st.success("✅ Models loaded from cache")
 
+# Debug mode - add ?debug=true to URL to enable
+query_params = st.query_params
+if query_params.get('debug') == 'true':
+    st.title("🔍 Debug Mode - Facial Age Estimator")
+    st.warning("Debug mode is enabled. This will show detailed information about the app state.")
+    
+    # Show environment info
+    st.subheader("🌍 Environment")
+    st.write(f"Python version: {sys.version}")
+    st.write(f"Streamlit version: {st.__version__}")
+    st.write(f"TensorFlow version: {tf.__version__}")
+    st.write(f"Keras version: {keras.__version__}")
+    
+    # Show session state
+    st.subheader("📊 Session State")
+    st.write(f"App initialized: {st.session_state.get('app_initialized', False)}")
+    st.write(f"Emergency mode: {st.session_state.get('emergency_mode', False)}")
+    
+    # Test individual components
+    st.subheader("🧪 Component Tests")
+    
+    # Test imports
+    try:
+        import tensorflow as tf
+        import keras
+        from deepface import DeepFace
+        from mtcnn import MTCNN
+        st.success("✅ All imports successful")
+    except Exception as e:
+        st.error(f"❌ Import failed: {e}")
+    
+    # Test DeepFace
+    try:
+        test_face = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
+        result = DeepFace.analyze(test_face, actions=['age'], enforce_detection=False)
+        st.success("✅ DeepFace working")
+    except Exception as e:
+        st.error(f"❌ DeepFace failed: {e}")
+    
+    # Test MTCNN
+    try:
+        detector = MTCNN()
+        st.success("✅ MTCNN working")
+    except Exception as e:
+        st.error(f"❌ MTCNN failed: {e}")
+    
+    # Reset buttons
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🔄 Reset App State"):
+            st.session_state.clear()
+            st.rerun()
+    
+    with col2:
+        if st.button("🚨 Enable Emergency Mode"):
+            st.session_state.emergency_mode = True
+            st.rerun()
+    
+    st.stop()  # Don't run the rest of the app in debug mode
+
+# Add emergency fallback in case of critical failures
+if 'emergency_mode' not in st.session_state:
+    st.session_state.emergency_mode = False
+
+# If in emergency mode, show a simplified interface
+if st.session_state.emergency_mode:
+    st.title("🚨 Emergency Mode - Basic Face Age Estimation")
+    st.warning("⚠️ Some models failed to load. Using simplified DeepFace-only mode.")
+    
+    uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
+    
+    if uploaded_file is not None:
+        try:
+            image = Image.open(uploaded_file).convert("RGB")
+            st.image(image, caption="Uploaded image", use_container_width=True)
+            
+            # Simple DeepFace analysis
+            img_array = np.array(image)
+            result = DeepFace.analyze(img_array, actions=['age'], enforce_detection=False)
+            
+            if isinstance(result, list):
+                age = result[0]['age']
+            else:
+                age = result['age']
+                
+            st.success(f"🎯 Estimated age: {age:.1f} years")
+            
+        except Exception as e:
+            st.error(f"❌ Analysis failed: {str(e)}")
+    
+    st.stop()  # Don't run the rest of the app
+    
 # Main interface
 st.markdown("### 📸 Upload a photo or take a new one")
 
