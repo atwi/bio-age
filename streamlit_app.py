@@ -385,73 +385,72 @@ if image_source is not None:
             st.success(f"✅ Detected {len(faces)} face(s)")
             
             # Create results display
-            fig, ax = plt.subplots(figsize=(8, 8))
-            ax.imshow(img_np)
-            
-            results = []
-            for i, face in enumerate(faces):
-                x, y, w, h = face['box']
-                x, y = abs(x), abs(y)
-                x2, y2 = x + w, y + h
+            try:
+                fig, ax = plt.subplots(figsize=(8, 8))
+                ax.imshow(img_np)
                 
-                # Draw bounding box
-                rect = patches.Rectangle((x, y), w, h, linewidth=3, 
-                                       edgecolor='#FF6B6B', facecolor='none')
-                ax.add_patch(rect)
-                
-                # Process face for age estimation
-                face_crop = img_np[y:y2, x:x2]
-                
-                # Harvard FaceAge model prediction
-                if harvard_model is not None:
-                    face_resized = cv2.resize(face_crop, (160, 160))
-                    face_pil = Image.fromarray(face_resized).convert('RGB')
-                    face_array = np.asarray(face_pil)
-                    mean, std = face_array.mean(), face_array.std()
-                    face_normalized = (face_array - mean) / std
-                    face_input = face_normalized.reshape(1, 160, 160, 3)
+                results = []
+                for i, face in enumerate(faces):
+                    x, y, w, h = face['box']
+                    x, y = abs(x), abs(y)
+                    x2, y2 = x + w, y + h
                     
-                    # Predict age with Harvard model
-                    try:
-                        # Handle different model types
-                        if hasattr(harvard_model, 'predict'):
-                            # Standard Keras model
-                            prediction = harvard_model.predict(face_input)
-                            harvard_age = float(np.squeeze(prediction))
-                        elif hasattr(harvard_model, 'signatures'):
-                            # SavedModel format
-                            signature = harvard_model.signatures['serving_default']
-                            prediction = signature(tf.constant(face_input, dtype=tf.float32))
-                            if isinstance(prediction, dict):
-                                age_prediction = list(prediction.values())[0]
-                            else:
-                                age_prediction = prediction
-                            harvard_age = float(np.squeeze(age_prediction))
-                        else:
-                            # Fallback - try direct call
-                            prediction = harvard_model(face_input)
-                            if isinstance(prediction, dict):
-                                age_prediction = list(prediction.values())[0]
-                            else:
-                                age_prediction = prediction
-                            harvard_age = float(np.squeeze(age_prediction))
-                    except Exception as e:
-                        st.warning(f"⚠️ Harvard model prediction failed: {str(e)}")
-                        harvard_age = None
-                else:
-                    harvard_age = None
-                
-                # DeepFace age prediction
-                deepface_age = None
-                try:
-                    # Ensure face crop is in correct format for DeepFace
-                    if face_crop.shape[0] < 20 or face_crop.shape[1] < 20:
-                        # Skip if face is too small
-                        st.info(f"Face {i+1} too small for DeepFace analysis")
-                    else:
-                        # Method 1: Direct numpy array analysis (preferred)
+                    # Draw bounding box
+                    rect = patches.Rectangle((x, y), w, h, linewidth=3, 
+                                           edgecolor='#FF6B6B', facecolor='none')
+                    ax.add_patch(rect)
+                    
+                    # Process face for age estimation
+                    face_crop = img_np[y:y2, x:x2]
+                    
+                    # Harvard FaceAge model prediction
+                    if harvard_model is not None:
+                        face_resized = cv2.resize(face_crop, (160, 160))
+                        face_pil = Image.fromarray(face_resized).convert('RGB')
+                        face_array = np.asarray(face_pil)
+                        mean, std = face_array.mean(), face_array.std()
+                        face_normalized = (face_array - mean) / std
+                        face_input = face_normalized.reshape(1, 160, 160, 3)
+                        
+                        # Predict age with Harvard model
                         try:
-                            # Resize face crop to a standard size for DeepFace
+                            # Handle different model types
+                            if hasattr(harvard_model, 'predict'):
+                                # Standard Keras model
+                                prediction = harvard_model.predict(face_input)
+                                harvard_age = float(np.squeeze(prediction))
+                            elif hasattr(harvard_model, 'signatures'):
+                                # SavedModel format
+                                signature = harvard_model.signatures['serving_default']
+                                prediction = signature(tf.constant(face_input, dtype=tf.float32))
+                                if isinstance(prediction, dict):
+                                    age_prediction = list(prediction.values())[0]
+                                else:
+                                    age_prediction = prediction
+                                harvard_age = float(np.squeeze(age_prediction))
+                            else:
+                                # Fallback - try direct call
+                                prediction = harvard_model(face_input)
+                                if isinstance(prediction, dict):
+                                    age_prediction = list(prediction.values())[0]
+                                else:
+                                    age_prediction = prediction
+                                harvard_age = float(np.squeeze(age_prediction))
+                        except Exception as e:
+                            st.warning(f"⚠️ Harvard model prediction failed: {str(e)}")
+                            harvard_age = None
+                    else:
+                        harvard_age = None
+                    
+                    # DeepFace age prediction
+                    deepface_age = None
+                    try:
+                        # Ensure face crop is in correct format for DeepFace
+                        if face_crop.shape[0] < 20 or face_crop.shape[1] < 20:
+                            # Skip if face is too small
+                            st.info(f"Face {i+1} too small for DeepFace analysis")
+                        else:
+                            # Resize face crop to a standard size for DeepFace (do this first)
                             face_resized = cv2.resize(face_crop, (224, 224))
                             
                             # Ensure proper data type and range
@@ -461,97 +460,110 @@ if image_source is not None:
                             # Ensure values are in proper range [0, 255]
                             face_resized = np.clip(face_resized, 0, 255)
                             
-                            # Try direct numpy array analysis first
-                            if len(face_resized.shape) == 3 and face_resized.shape[2] == 3:
-                                deepface_result = DeepFace.analyze(face_resized, actions=['age'], enforce_detection=False)
-                                
-                                if isinstance(deepface_result, list):
-                                    deepface_age = deepface_result[0]['age']
-                                else:
-                                    deepface_age = deepface_result['age']
-                                    
-                                st.info(f"✅ DeepFace analysis successful for face {i+1}: {deepface_age:.1f} years")
-                            else:
-                                raise ValueError("Invalid face format")
-                                
-                        except Exception as e1:
-                            # Method 2: File-based analysis (fallback)
+                            # Method 1: Direct numpy array analysis (preferred)
                             try:
-                                st.info(f"Trying file-based analysis for face {i+1}...")
-                                temp_path = f"temp_face_{i}.jpg"
-                                temp_image = Image.fromarray(face_resized)
-                                temp_image.save(temp_path)
-                                
-                                # Analyze with DeepFace
-                                deepface_result = DeepFace.analyze(temp_path, actions=['age'], enforce_detection=False)
-                                
-                                # Clean up temp file
-                                if os.path.exists(temp_path):
-                                    os.remove(temp_path)
-                                
-                                if isinstance(deepface_result, list):
-                                    deepface_age = deepface_result[0]['age']
-                                else:
-                                    deepface_age = deepface_result['age']
+                                # Try direct numpy array analysis first
+                                if len(face_resized.shape) == 3 and face_resized.shape[2] == 3:
+                                    deepface_result = DeepFace.analyze(face_resized, actions=['age'], enforce_detection=False)
                                     
-                                st.info(f"✅ DeepFace file analysis successful for face {i+1}: {deepface_age:.1f} years")
-                                
-                            except Exception as e2:
-                                # Clean up temp file if it exists
-                                temp_path = f"temp_face_{i}.jpg"
-                                if os.path.exists(temp_path):
-                                    os.remove(temp_path)
-                                st.error(f"❌ Both DeepFace methods failed for face {i+1}")
-                                st.error(f"   Direct analysis error: {str(e1)}")
-                                st.error(f"   File analysis error: {str(e2)}")
-                                deepface_age = None
-                                
-                except Exception as e:
-                    # Final catch-all
-                    st.error(f"❌ DeepFace analysis completely failed for face {i+1}: {str(e)}")
-                    deepface_age = None
-                
-                # Age group classification (using Harvard age as primary, DeepFace as fallback)
-                primary_age = harvard_age if harvard_age is not None else deepface_age
-                
-                if primary_age is not None:
-                    if primary_age < 30:
-                        color = '#4CAF50'
-                        age_group = "Young"
-                        emoji = "😊"
-                    elif primary_age < 50:
-                        color = '#FF9800'
-                        age_group = "Adult"
-                        emoji = "😐"
+                                    if isinstance(deepface_result, list):
+                                        deepface_age = deepface_result[0]['age']
+                                    else:
+                                        deepface_age = deepface_result['age']
+                                        
+                                    st.info(f"✅ DeepFace analysis successful for face {i+1}: {deepface_age:.1f} years")
+                                else:
+                                    raise ValueError("Invalid face format")
+                                    
+                            except Exception as e1:
+                                # Method 2: File-based analysis (fallback)
+                                try:
+                                    st.info(f"Trying file-based analysis for face {i+1}...")
+                                    temp_path = f"temp_face_{i}.jpg"
+                                    temp_image = Image.fromarray(face_resized)
+                                    temp_image.save(temp_path)
+                                    
+                                    # Analyze with DeepFace
+                                    deepface_result = DeepFace.analyze(temp_path, actions=['age'], enforce_detection=False)
+                                    
+                                    # Clean up temp file
+                                    if os.path.exists(temp_path):
+                                        os.remove(temp_path)
+                                    
+                                    if isinstance(deepface_result, list):
+                                        deepface_age = deepface_result[0]['age']
+                                    else:
+                                        deepface_age = deepface_result['age']
+                                        
+                                    st.info(f"✅ DeepFace file analysis successful for face {i+1}: {deepface_age:.1f} years")
+                                    
+                                except Exception as e2:
+                                    # Clean up temp file if it exists
+                                    temp_path = f"temp_face_{i}.jpg"
+                                    if os.path.exists(temp_path):
+                                        os.remove(temp_path)
+                                    st.error(f"❌ Both DeepFace methods failed for face {i+1}")
+                                    st.error(f"   Direct analysis error: {str(e1)}")
+                                    st.error(f"   File analysis error: {str(e2)}")
+                                    deepface_age = None
+                                    
+                    except Exception as e:
+                        # Final catch-all
+                        st.error(f"❌ DeepFace analysis completely failed for face {i+1}: {str(e)}")
+                        deepface_age = None
+                    
+                    # Age group classification (using Harvard age as primary, DeepFace as fallback)
+                    primary_age = harvard_age if harvard_age is not None else deepface_age
+                    
+                    if primary_age is not None:
+                        if primary_age < 30:
+                            color = '#4CAF50'
+                            age_group = "Young"
+                            emoji = "😊"
+                        elif primary_age < 50:
+                            color = '#FF9800'
+                            age_group = "Adult"
+                            emoji = "😐"
+                        else:
+                            color = '#F44336'
+                            age_group = "Senior"
+                            emoji = "👴"
                     else:
-                        color = '#F44336'
-                        age_group = "Senior"
-                        emoji = "👴"
-                else:
-                    color = '#666666'
-                    age_group = "Unknown"
-                    emoji = "❓"
+                        color = '#666666'
+                        age_group = "Unknown"
+                        emoji = "❓"
+                    
+                    # Add annotation with both ages
+                    harvard_text = f"{harvard_age:.1f}y" if harvard_age is not None else "N/A"
+                    deepface_text = f"{deepface_age:.1f}y" if deepface_age is not None else "N/A"
+                    annotation_text = f"{emoji} Harvard: {harvard_text} | DeepFace: {deepface_text}"
+                    
+                    ax.text(x, y-15, annotation_text, 
+                           color=color, fontsize=12, weight='bold',
+                           bbox=dict(boxstyle="round,pad=0.5", facecolor='white', alpha=0.9))
+                    
+                    results.append({
+                        'face_num': i+1,
+                        'harvard_age': harvard_age,
+                        'deepface_age': deepface_age,
+                        'group': age_group,
+                        'confidence': face['confidence']
+                    })
                 
-                # Add annotation with both ages
-                harvard_text = f"{harvard_age:.1f}y" if harvard_age is not None else "N/A"
-                deepface_text = f"{deepface_age:.1f}y" if deepface_age is not None else "N/A"
-                annotation_text = f"{emoji} Harvard: {harvard_text} | DeepFace: {deepface_text}"
+                ax.axis('off')
+                st.pyplot(fig)
+                plt.close(fig)  # Close figure to prevent memory leaks
                 
-                ax.text(x, y-15, annotation_text, 
-                       color=color, fontsize=12, weight='bold',
-                       bbox=dict(boxstyle="round,pad=0.5", facecolor='white', alpha=0.9))
+            except Exception as plot_error:
+                st.error(f"❌ Error creating visualization: {str(plot_error)}")
+                # Close figure if it exists
+                try:
+                    plt.close(fig)
+                except:
+                    pass
+                # Continue with results even if plotting fails
+                results = []  # Ensure results is defined
                 
-                results.append({
-                    'face_num': i+1,
-                    'harvard_age': harvard_age,
-                    'deepface_age': deepface_age,
-                    'group': age_group,
-                    'confidence': face['confidence']
-                })
-            
-            ax.axis('off')
-            st.pyplot(fig)
-            
             # Results summary
             st.markdown("### 📊 Analysis Results")
             for result in results:
