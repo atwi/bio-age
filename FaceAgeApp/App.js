@@ -8,6 +8,8 @@ import {
   Dimensions,
   Platform,
   SafeAreaView,
+  Animated,
+  View,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as ImagePicker from 'expo-image-picker';
@@ -83,11 +85,60 @@ function AppContent() {
   const [webCameraStream, setWebCameraStream] = useState(null);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  
+  // Animated values for scanning effect
+  const scanLinePosition = useRef(new Animated.Value(0)).current;
+  const scanLineOpacity = useRef(new Animated.Value(0.3)).current;
 
   // Check API health
   useEffect(() => {
     checkApiHealth();
   }, []);
+
+  // Start scanning animation when in step 2
+  useEffect(() => {
+    if (currentStep === 2) {
+      // Start the scanning animation
+      const startScanAnimation = () => {
+        // Reset position
+        scanLinePosition.setValue(0);
+        
+        // Create looping animation
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(scanLinePosition, {
+              toValue: 1,
+              duration: 2000,
+              useNativeDriver: false,
+            }),
+            Animated.timing(scanLinePosition, {
+              toValue: 0,
+              duration: 2000,
+              useNativeDriver: false,
+            }),
+          ])
+        ).start();
+
+        // Pulse opacity
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(scanLineOpacity, {
+              toValue: 0.8,
+              duration: 1000,
+              useNativeDriver: false,
+            }),
+            Animated.timing(scanLineOpacity, {
+              toValue: 0.3,
+              duration: 1000,
+              useNativeDriver: false,
+            }),
+          ])
+        ).start();
+      };
+
+      startScanAnimation();
+    }
+  }, [currentStep]);
 
   const checkApiHealth = async () => {
     try {
@@ -268,6 +319,9 @@ function AppContent() {
         const data = await response.json();
         console.log('Analysis results:', data);
         setResults(data);
+        
+        // Add minimum delay to show scanning animation
+        await new Promise(resolve => setTimeout(resolve, 2000));
         setCurrentStep(3); // Move to results step
       } else {
         const errorText = await response.text();
@@ -399,9 +453,26 @@ function AppContent() {
               style={styles.analyzingImage}
               resizeMode="contain"
             />
-            <Layout style={styles.scanOverlay}>
-              <Layout style={styles.scanLine} />
-            </Layout>
+            <View style={styles.scanOverlay}>
+              <Animated.View style={[
+                styles.scanLine,
+                {
+                  opacity: scanLineOpacity,
+                  transform: [{
+                    translateY: scanLinePosition.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [-(width * 0.6) / 2, (width * 0.6) / 2],
+                    })
+                  }]
+                }
+              ]} />
+              
+              {/* Corner brackets for scanning effect */}
+              <View style={styles.scanCornerTopLeft} />
+              <View style={styles.scanCornerTopRight} />
+              <View style={styles.scanCornerBottomLeft} />
+              <View style={styles.scanCornerBottomRight} />
+            </View>
           </Layout>
         )}
 
@@ -429,8 +500,8 @@ function AppContent() {
       </Layout>
 
       <ScrollView style={styles.resultsScrollView}>
-        {results && results.faces && results.faces.length > 0 ? (
-          results.faces.map((face, index) => (
+        {results && results.faces && results.faces.filter(face => face.confidence >= 0.9).length > 0 ? (
+          results.faces.filter(face => face.confidence >= 0.9).map((face, index) => (
             <Card key={index} style={styles.resultCard}>
               <Layout style={styles.resultHeader}>
                 <Text category='h6' style={styles.resultTitle}>
@@ -442,23 +513,36 @@ function AppContent() {
               </Layout>
               
               <Layout style={styles.resultContent}>
-                {face.harvard_age && (
-                  <Layout style={styles.ageResult}>
-                    <Text category='label' style={styles.ageLabel}>🎯 Harvard Age</Text>
-                    <Text category='h5' style={styles.ageValue}>
-                      {face.harvard_age.toFixed(1)} years
-                    </Text>
+                {/* Face crop image */}
+                {face.face_crop_base64 && (
+                  <Layout style={styles.faceCropContainer}>
+                    <Image
+                      source={{ uri: `data:image/jpeg;base64,${face.face_crop_base64}` }}
+                      style={styles.faceCropImage}
+                      resizeMode="cover"
+                    />
                   </Layout>
                 )}
                 
-                {face.deepface_age && (
-                  <Layout style={styles.ageResult}>
-                    <Text category='label' style={styles.ageLabel}>🤖 DeepFace Age</Text>
-                    <Text category='h5' style={styles.ageValue}>
-                      {face.deepface_age.toFixed(1)} years
-                    </Text>
-                  </Layout>
-                )}
+                <Layout style={styles.ageResultsContainer}>
+                  {face.harvard_age && (
+                    <Layout style={styles.ageResult}>
+                      <Text category='label' style={styles.ageLabel}>🎯 Harvard Age</Text>
+                      <Text category='h5' style={styles.ageValue}>
+                        {face.harvard_age.toFixed(1)} years
+                      </Text>
+                    </Layout>
+                  )}
+                  
+                  {face.deepface_age && (
+                    <Layout style={styles.ageResult}>
+                      <Text category='label' style={styles.ageLabel}>🤖 DeepFace Age</Text>
+                      <Text category='h5' style={styles.ageValue}>
+                        {face.deepface_age.toFixed(1)} years
+                      </Text>
+                    </Layout>
+                  )}
+                </Layout>
                 
                 {/* Age Category */}
                 <Layout style={styles.categoryContainer}>
@@ -491,10 +575,13 @@ function AppContent() {
         ) : (
           <Card style={styles.noResultsCard}>
             <Text category='h6' style={styles.noResultsText}>
-              No faces detected in the image
+              No clear faces detected
             </Text>
             <Text category='c1' style={styles.noResultsSubtext}>
-              Try a clearer photo with visible faces
+              {results && results.faces && results.faces.length > 0 
+                ? `Found ${results.faces.length} face(s) but none with sufficient confidence (≥90%)`
+                : 'Try a clearer photo with visible faces'
+              }
             </Text>
           </Card>
         )}
@@ -617,14 +704,60 @@ const styles = StyleSheet.create({
     bottom: 0,
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
   },
   scanLine: {
-    width: '90%',
-    height: 3,
+    width: '85%',
+    height: 4,
     backgroundColor: '#00E676',
     borderRadius: 2,
-    opacity: 0.8,
+    shadowColor: '#00E676',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 8,
+    elevation: 5,
   },
+  scanCornerTopLeft: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    width: 20,
+    height: 20,
+    borderTopWidth: 3,
+    borderLeftWidth: 3,
+    borderColor: '#00E676',
+  },
+  scanCornerTopRight: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 20,
+    height: 20,
+    borderTopWidth: 3,
+    borderRightWidth: 3,
+    borderColor: '#00E676',
+  },
+  scanCornerBottomLeft: {
+    position: 'absolute',
+    bottom: 10,
+    left: 10,
+    width: 20,
+    height: 20,
+    borderBottomWidth: 3,
+    borderLeftWidth: 3,
+    borderColor: '#00E676',
+  },
+  scanCornerBottomRight: {
+    position: 'absolute',
+    bottom: 10,
+    right: 10,
+    width: 20,
+    height: 20,
+    borderBottomWidth: 3,
+    borderRightWidth: 3,
+    borderColor: '#00E676',
+  },
+
   loadingContainer: {
     alignItems: 'center',
     gap: 15,
@@ -657,6 +790,31 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   resultContent: {
+    gap: 15,
+  },
+  faceCropContainer: {
+    alignItems: 'center',
+    marginBottom: 15,
+    padding: 12,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  faceCropImage: {
+    width: 100,
+    height: 120,
+    borderRadius: 15,
+    borderWidth: 2,
+    borderColor: '#2196F3',
+    backgroundColor: '#fff',
+  },
+  ageResultsContainer: {
     gap: 15,
   },
   ageResult: {
