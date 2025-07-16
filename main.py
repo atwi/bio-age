@@ -64,7 +64,7 @@ else:
             "message": "Bio Age Estimator API", 
             "api_docs": "/docs",
             "api_health": "/api/health",
-            "note": "React Native web build not found. Run 'cd FaceAgeApp && npx expo export:web' to build the frontend."
+            "note": "React Native web build not found. Run 'cd FaceAgeApp && npx expo export --platform web' to build the frontend."
         }
 
 # Health check for the main app
