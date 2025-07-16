@@ -38,15 +38,15 @@ const getApiBaseUrl = () => {
   if (typeof window !== 'undefined' && window.location) {
     // Web environment
     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-      // Local development
-      return 'http://192.168.96.130:8000';
+      // Local development - use /api prefix for unified deployment
+      return 'http://localhost:8000/api';
     } else {
       // Production - use relative URLs since API is served from same domain
       return '/api';
     }
   } else {
     // React Native mobile environment
-    return 'http://192.168.96.130:8000';
+    return 'http://192.168.96.130:8000/api';
   }
 };
 
