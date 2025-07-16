@@ -15,11 +15,41 @@ import uvicorn
 # Add the current directory to Python path
 sys.path.insert(0, str(Path(__file__).parent))
 
-# Import the API backend
-from api_backend import app as api_app
+# Import the API backend and its initialization functions
+import api_backend
+from api_backend import app as api_app, init_face_detector, load_harvard_model, test_deepface
 
 # Create the main app
 app = FastAPI(title="Bio Age Estimator", description="Full-stack deployment")
+
+# Initialize models on startup
+def initialize_models():
+    """Initialize models on startup"""
+    print("Initializing models...")
+    
+    # Initialize face detector and set the global variable
+    if init_face_detector():
+        print("✅ Face detector initialized successfully")
+    else:
+        print("❌ Face detector initialization failed")
+    
+    # Initialize Harvard model and set the global variable
+    if load_harvard_model():
+        print("✅ Harvard model loaded successfully") 
+    else:
+        print("❌ Harvard model not available")
+    
+    # Test DeepFace
+    if test_deepface():
+        print("✅ DeepFace test successful")
+    else:
+        print("❌ DeepFace not available")
+    
+    print("API server ready!")
+    
+    # Verify the models are set in api_backend
+    print(f"Face detector status: {api_backend.face_detector is not None}")
+    print(f"Harvard model status: {api_backend.harvard_model is not None}")
 
 # Mount the API backend under /api
 app.mount("/api", api_app)
@@ -85,6 +115,9 @@ if __name__ == "__main__":
     print(f"🚀 Starting Bio Age Estimator on port {port}")
     print(f"📁 Web build path: {web_build_path}")
     print(f"🌐 Frontend available: {web_build_path.exists()}")
+    
+    # Initialize models before starting server
+    initialize_models()
     
     # Run the server
     uvicorn.run(
