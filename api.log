@@ -1,0 +1,15 @@
+INFO:     Started server process [43597]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+Initializing models...
+Harvard model loaded from: FaceAge/models/model_saved_tf
+DeepFace test successful
+API server ready!
+INFO:     127.0.0.1:52644 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52653 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52666 - "GET /docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52853 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52860 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52862 - "POST /analyze-face HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53001 - "GET /health HTTP/1.1" 200 OK

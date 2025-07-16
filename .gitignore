@@ -8,6 +8,9 @@ build/
 develop-eggs/
 dist/
 downloads/
+
+# Exception: Keep React Native web build for deployment
+!FaceAgeApp/dist/
 eggs/
 .eggs/
 lib/

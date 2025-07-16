@@ -1,0 +1,21 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "deploy": {
+    "restartPolicyType": "ON_FAILURE",
+    "sleepApplication": false,
+    "cronSchedule": null
+  },
+  "build": {
+    "builder": "NIXPACKS",
+    "buildCommand": "pip install -r requirements.txt && cd FaceAgeApp && npm install && npx expo export --platform web",
+    "watchPatterns": ["**/*"]
+  },
+  "environments": {
+    "production": {
+      "variables": {
+        "PYTHONPATH": "/app",
+        "PORT": "8000"
+      }
+    }
+  }
+} 
