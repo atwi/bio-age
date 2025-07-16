@@ -45,6 +45,9 @@ model_saved_tf/
 model_saved_tf.zip
 temp_face_*.jpg
 
+# FaceAge repository (separate git repo)
+FaceAge/
+
 # DeepFace cache
 .deepface/
 
