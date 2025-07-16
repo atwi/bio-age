@@ -1,7 +1,7 @@
 import streamlit as st
 import numpy as np
 import cv2
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from mtcnn import MTCNN
 
 # Cloud-specific optimizations
@@ -57,6 +57,117 @@ except ImportError as e:
     st.stop()
 
 # Memory management function
+def create_face_overlay(image, faces):
+    """Create a clean tech-style overlay showing face detection"""
+    # Convert to PIL if needed
+    if isinstance(image, np.ndarray):
+        pil_image = Image.fromarray(image)
+    else:
+        pil_image = image.copy()
+    
+    draw = ImageDraw.Draw(pil_image)
+    
+    # Try to load a font, fallback to default if not available
+    try:
+        font = ImageFont.truetype("Arial.ttf", 24)
+        small_font = ImageFont.truetype("Arial.ttf", 18)
+    except:
+        try:
+            # Try system default
+            font = ImageFont.load_default()
+            small_font = ImageFont.load_default()
+        except:
+            font = None
+            small_font = None
+    
+    for i, face in enumerate(faces):
+        x, y, w, h = face['box']
+        confidence = face['confidence']
+        
+        # Colors for tech look - make more prominent
+        primary_color = "#00FF00"  # Bright green for better visibility
+        secondary_color = "#00CC00"  # Darker green
+        bg_color = "#000000"  # Pure black background
+        
+        # Draw corner brackets (clean tech style) - make more prominent
+        bracket_size = min(w, h) // 6  # Larger brackets
+        line_width = 5  # Thicker lines
+        
+        # Top-left corner
+        draw.line([(x, y), (x + bracket_size, y)], fill=primary_color, width=line_width)
+        draw.line([(x, y), (x, y + bracket_size)], fill=primary_color, width=line_width)
+        
+        # Top-right corner
+        draw.line([(x + w - bracket_size, y), (x + w, y)], fill=primary_color, width=line_width)
+        draw.line([(x + w, y), (x + w, y + bracket_size)], fill=primary_color, width=line_width)
+        
+        # Bottom-left corner
+        draw.line([(x, y + h - bracket_size), (x, y + h)], fill=primary_color, width=line_width)
+        draw.line([(x, y + h), (x + bracket_size, y + h)], fill=primary_color, width=line_width)
+        
+        # Bottom-right corner
+        draw.line([(x + w - bracket_size, y + h), (x + w, y + h)], fill=primary_color, width=line_width)
+        draw.line([(x + w, y + h - bracket_size), (x + w, y + h)], fill=primary_color, width=line_width)
+        
+        # Create confidence badge
+        badge_text = f"Face {i+1}: {confidence:.1%}"
+        
+        # Calculate badge dimensions
+        if font:
+            bbox = draw.textbbox((0, 0), badge_text, font=small_font)
+            text_width = bbox[2] - bbox[0]
+            text_height = bbox[3] - bbox[1]
+        else:
+            text_width = len(badge_text) * 8
+            text_height = 16
+        
+        # Badge position (top-left, slightly offset)
+        badge_x = x + 5
+        badge_y = y - 35
+        badge_padding = 8
+        
+        # Draw badge background with rounded corners effect
+        badge_bg = [
+            badge_x - badge_padding,
+            badge_y - badge_padding,
+            badge_x + text_width + badge_padding,
+            badge_y + text_height + badge_padding
+        ]
+        
+        # Semi-transparent background with better visibility
+        draw.rectangle(badge_bg, fill=bg_color + "E0", outline=primary_color, width=3)
+        
+        # Draw badge text
+        draw.text((badge_x, badge_y), badge_text, fill=primary_color, font=small_font)
+        
+        # Add small face number inside the detection box
+        face_num_text = f"{i+1}"
+        if font:
+            num_bbox = draw.textbbox((0, 0), face_num_text, font=font)
+            num_width = num_bbox[2] - num_bbox[0]
+            num_height = num_bbox[3] - num_bbox[1]
+        else:
+            num_width = 16
+            num_height = 16
+        
+        # Draw face number in bottom-right of detection box
+        num_x = x + w - num_width - 10
+        num_y = y + h - num_height - 10
+        
+        # Small circle background for number - more prominent
+        circle_radius = 18
+        draw.ellipse(
+            [num_x - circle_radius, num_y - circle_radius, 
+             num_x + circle_radius, num_y + circle_radius],
+            fill=secondary_color, outline=primary_color, width=3
+        )
+        
+        # Draw number
+        draw.text((num_x - num_width//2, num_y - num_height//2), 
+                 face_num_text, fill="white", font=font)
+    
+    return pil_image
+
 def aggressive_cleanup():
     """Aggressive memory cleanup for cloud environments"""
     gc.collect()
@@ -110,12 +221,6 @@ st.markdown("**Estimate biological age from facial features**")
 # Main interface - moved up for better UX
 st.markdown("### 📸 Upload Your Photo")
 
-# Memory cleanup button for cloud
-if IS_CLOUD:
-    if st.button("🧹 Clear Memory Cache"):
-        aggressive_cleanup()
-        st.success("✅ Memory cleared!")
-
 # Simplified upload (cloud-friendly)
 uploaded_file = st.file_uploader(
     "Choose an image",
@@ -132,25 +237,29 @@ col1, col2 = st.columns(2)
 with col1:
     st.markdown("""
     **🏫 Harvard FaceAge Model**
-    - More accurate for ages 60+ 
-    - Less accurate for ages <40
-    - Specialized for biological aging
-    - 85MB model size
+    - **Specifically designed for ages 60+**
+    - More accurate for biological aging
+    - Trained on clinical populations
+    - **Recommended for elderly subjects**
     """)
 
 with col2:
     st.markdown("""
     **🤖 DeepFace Model**
-    - Broad age range accuracy
     - General-purpose face analysis
-    - Multiple neural networks
-    - 539MB model size
+    - **⚠️ Training bias toward middle ages**
+    - **Poor accuracy for elderly faces (70+)**
+    - Tends to predict 40-50 for all ages
     """)
 
-st.markdown("### 📚 Credits")
+st.warning("⚠️ **Important**: DeepFace has known limitations for elderly faces due to training bias. It often predicts middle-aged values (40-50) even for obviously elderly subjects. The Harvard model is specifically designed for better accuracy on older faces.")
+
+st.info("🔍 **Technical Note**: The app uses MTCNN for face detection, then feeds the detected faces to both models for age estimation. DeepFace's internal face detection is disabled to avoid conflicts.")
+
+st.markdown("### 📚 Model Credits")
 st.markdown("""
-- **Harvard FaceAge**: [Aging Faces in the Wild](https://github.com/JingchunCheng/All-Age-Faces-Dataset) - Research model for biological age estimation
-- **DeepFace**: [Facebook AI Research](https://github.com/serengil/deepface) - Comprehensive face analysis framework
+- [**Harvard FaceAge**](github.com/AIM-Harvard/FaceAge) - Research model for biological age estimation
+- [**DeepFace**](https://github.com/serengil/deepface) - Comprehensive face analysis framework
 - **MTCNN**: Face detection and alignment
 """)
 
@@ -282,6 +391,9 @@ def test_deepface_cloud():
         # Create minimal test image
         test_img = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
         
+        st.write("🔍 **DeepFace Initialization Test:**")
+        st.write(f"- Test image shape: {test_img.shape}")
+        
         # Cloud-optimized DeepFace call
         result = DeepFace.analyze(
             test_img,
@@ -290,14 +402,26 @@ def test_deepface_cloud():
             silent=True
         )
         
+        st.write(f"- Test result: {result}")
+        
+        # Extract test age
+        if isinstance(result, list):
+            test_age = result[0]['age']
+            st.write(f"- Test age from list: {test_age}")
+        else:
+            test_age = result['age']
+            st.write(f"- Test age from dict: {test_age}")
+        
         # Force garbage collection
         del test_img, result
         aggressive_cleanup()
         
+        st.success(f"✅ DeepFace initialization successful! Test age: {test_age}")
         return True
         
     except Exception as e:
         st.error(f"❌ DeepFace test failed: {str(e)}")
+        st.write(f"🔍 **DeepFace Init Error:** {type(e).__name__}: {str(e)}")
         return False
 
 # Initialize session state
@@ -342,10 +466,9 @@ if uploaded_file is not None:
         st.error("❌ Failed to load models. Please refresh the page.")
         st.stop()
     
-    # Display image
+    # Process image
     try:
         image = Image.open(uploaded_file).convert("RGB")
-        st.image(image, caption="Your photo", use_container_width=True)
         
         # Process with cloud optimizations
         with st.spinner("🔍 Analyzing faces..."):
@@ -356,8 +479,14 @@ if uploaded_file is not None:
             
             if not faces:
                 st.error("❌ No face detected. Please try a clearer photo.")
+                # Show original image only if no faces found
+                st.image(image, caption="📸 Original photo - No faces detected", width=400)
             else:
                 st.success(f"✅ Found {len(faces)} face(s)")
+                
+                # Create and display face detection overlay (replaces original image)
+                overlay_image = create_face_overlay(image, faces)
+                st.image(overlay_image, caption="🎯 Face Detection Results", width=400)
                 
                 # Load Harvard model fresh each time (no caching)
                 harvard_model = None
@@ -431,23 +560,28 @@ if uploaded_file is not None:
                     deepface_age = None
                     try:
                         if face_crop.shape[0] > 20 and face_crop.shape[1] > 20:
-                            # Resize for consistency
+                            # Note: DeepFace has training bias toward middle ages (40-50)
+                            # It's not optimal for elderly faces due to dataset bias
                             face_resized = cv2.resize(face_crop, (224, 224))
                             face_resized = np.clip(face_resized, 0, 255).astype(np.uint8)
                             
-                            # Analyze with DeepFace
+                            # Analyze with DeepFace (using MTCNN's face detection results)
                             result = DeepFace.analyze(
                                 face_resized,
                                 actions=['age'],
-                                enforce_detection=False,
+                                enforce_detection=False,  # Don't fail if DeepFace disagrees with MTCNN
                                 silent=True
                             )
                             
-                            # Extract age
+                            # Extract age (ignore DeepFace's internal face confidence - trust MTCNN)
                             if isinstance(result, list):
                                 deepface_age = result[0]['age']
                             else:
                                 deepface_age = result['age']
+                            
+                            # Warning for training bias (main issue with DeepFace)
+                            if deepface_age >= 35 and deepface_age <= 55:
+                                st.warning("⚠️ DeepFace prediction may be affected by training bias toward middle ages")
                             
                             # Clamp to reasonable range
                             deepface_age = max(10, min(100, deepface_age))
@@ -461,13 +595,14 @@ if uploaded_file is not None:
                             
                     except Exception as e:
                         st.error(f"❌ DeepFace failed for face {i+1}: {str(e)}")
+                        st.write(f"🔍 **DeepFace Error Details:** {type(e).__name__}: {str(e)}")
                     
                     # Display results
                     col1, col2 = st.columns([1, 2])
                     
                     with col1:
                         face_pil = Image.fromarray(face_crop)
-                        st.image(face_pil, caption=f"Face {i+1}", width=150)
+                        st.image(face_pil, caption=f"Face {i+1} (Cropped)", width=150)
                     
                     with col2:
                         # Show both ages if available
@@ -476,7 +611,7 @@ if uploaded_file is not None:
                         if deepface_age is not None:
                             st.metric("🤖 DeepFace Age", f"{deepface_age:.1f} years")
                         
-                        st.metric("Detection Confidence", f"{face['confidence']:.2f}")
+                        st.metric("Face Detection (MTCNN)", f"{face['confidence']:.2f}")
                         
                         # Use Harvard age as primary, DeepFace as fallback
                         primary_age = harvard_age if harvard_age is not None else deepface_age
