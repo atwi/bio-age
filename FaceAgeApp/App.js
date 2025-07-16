@@ -30,7 +30,7 @@ import {
   IconRegistry,
 } from '@ui-kitten/components';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
 // API Configuration
 const getApiBaseUrl = () => {
@@ -69,7 +69,12 @@ const RefreshIcon = (props) => (
   <Icon {...props} name='refresh-outline'/>
 );
 
+const ArrowBackIcon = (props) => (
+  <Icon {...props} name='arrow-back-outline'/>
+);
+
 function AppContent() {
+  const [currentStep, setCurrentStep] = useState(1); // 1: Upload, 2: Analyzing, 3: Results
   const [selectedImage, setSelectedImage] = useState(null);
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState(null);
@@ -78,8 +83,6 @@ function AppContent() {
   const [webCameraStream, setWebCameraStream] = useState(null);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
-
-  // Camera permissions are handled by ImagePicker internally
 
   // Check API health
   useEffect(() => {
@@ -102,23 +105,21 @@ function AppContent() {
         setApiHealth({ status: 'error', message: 'API not responding' });
       }
     } catch (error) {
-      setApiHealth({ status: 'error', message: 'Connection failed' });
+      console.error('Health check error:', error);
+      setApiHealth({ status: 'error', message: 'Network error' });
     }
   };
 
   const resizeImage = async (uri) => {
     try {
-      const resized = await ImageManipulator.manipulateAsync(
+      const result = await ImageManipulator.manipulateAsync(
         uri,
         [{ resize: { width: 800 } }],
-        {
-          compress: 0.8,
-          format: ImageManipulator.SaveFormat.JPEG,
-        }
+        { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
       );
-      return resized;
+      return result;
     } catch (error) {
-      console.error('Image resize error:', error);
+      console.error('Resize error:', error);
       return { uri };
     }
   };
@@ -135,20 +136,20 @@ function AppContent() {
       if (!result.canceled) {
         const compressedImage = await resizeImage(result.assets[0].uri);
         setSelectedImage(compressedImage);
-        setResults(null);
+        setCurrentStep(2); // Move to analyzing step
+        analyzeFace(compressedImage);
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to pick image');
+      console.error('Pick image error:', error);
+      Alert.alert('Error', 'Failed to select image: ' + error.message);
     }
   };
 
   const takePhoto = async () => {
     try {
       if (Platform.OS === 'web') {
-        // Use web camera for browsers
         setShowWebCamera(true);
       } else {
-        // Use ImagePicker for mobile
         const result = await ImagePicker.launchCameraAsync({
           mediaTypes: ImagePicker.MediaTypeOptions.Images,
           allowsEditing: true,
@@ -159,7 +160,8 @@ function AppContent() {
         if (!result.canceled) {
           const compressedImage = await resizeImage(result.assets[0].uri);
           setSelectedImage(compressedImage);
-          setResults(null);
+          setCurrentStep(2); // Move to analyzing step
+          analyzeFace(compressedImage);
         }
       }
     } catch (error) {
@@ -192,20 +194,18 @@ function AppContent() {
         const canvas = canvasRef.current;
         const context = canvas.getContext('2d');
         
-        // Set canvas size to match video
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         
-        // Draw video frame to canvas
         context.drawImage(video, 0, 0);
         
-        // Convert to blob
         canvas.toBlob(async (blob) => {
           const imageUri = URL.createObjectURL(blob);
           const compressedImage = await resizeImage(imageUri);
           setSelectedImage(compressedImage);
-          setResults(null);
           closeWebCamera();
+          setCurrentStep(2); // Move to analyzing step
+          analyzeFace(compressedImage);
         }, 'image/jpeg', 0.8);
       }
     } catch (error) {
@@ -233,39 +233,33 @@ function AppContent() {
     };
   }, [showWebCamera]);
 
-  const analyzeFace = async () => {
-    if (!selectedImage) return;
+  const analyzeFace = async (imageToAnalyze = selectedImage) => {
+    if (!imageToAnalyze) return;
 
     setLoading(true);
     try {
       const formData = new FormData();
       
-      // Check if we're in web environment (React Native Web)
-      if (typeof selectedImage.uri === 'string' && 
-          (selectedImage.uri.startsWith('data:') || selectedImage.uri.startsWith('blob:'))) {
-        // Handle web environment (data URLs or blob URLs)
-        const response = await fetch(selectedImage.uri);
+      if (typeof imageToAnalyze.uri === 'string' && 
+          (imageToAnalyze.uri.startsWith('data:') || imageToAnalyze.uri.startsWith('blob:'))) {
+        const response = await fetch(imageToAnalyze.uri);
         const blob = await response.blob();
         formData.append('file', blob, 'image.jpg');
       } else {
-        // For React Native (mobile) - need to create proper file object
         const fileInfo = {
-          uri: selectedImage.uri,
+          uri: imageToAnalyze.uri,
           type: 'image/jpeg',
           name: 'image.jpg',
         };
         
-        // Use the file object directly for React Native
         formData.append('file', fileInfo);
       }
 
       console.log('Sending request to:', `${API_BASE_URL}/analyze-face`);
-      console.log('FormData created with file:', selectedImage.uri);
 
       const response = await fetch(`${API_BASE_URL}/analyze-face`, {
         method: 'POST',
         body: formData,
-        // Don't set Content-Type header - let the browser set it with boundary
       });
 
       console.log('Response status:', response.status);
@@ -274,14 +268,17 @@ function AppContent() {
         const data = await response.json();
         console.log('Analysis results:', data);
         setResults(data);
+        setCurrentStep(3); // Move to results step
       } else {
         const errorText = await response.text();
         console.error('Error response:', errorText);
         Alert.alert('Error', `Analysis failed: ${response.status}`);
+        setCurrentStep(1); // Go back to upload step
       }
     } catch (error) {
       console.error('Network error:', error);
       Alert.alert('Error', `Network error: ${error.message}`);
+      setCurrentStep(1); // Go back to upload step
     } finally {
       setLoading(false);
     }
@@ -290,203 +287,248 @@ function AppContent() {
   const resetApp = () => {
     setSelectedImage(null);
     setResults(null);
+    setCurrentStep(1);
     closeWebCamera();
   };
-
-  // Permission checks removed - ImagePicker handles permissions internally
 
   // Web camera view for browsers
   if (showWebCamera && Platform.OS === 'web') {
     return (
-      <SafeAreaView style={styles.safeArea}>
-        <Layout style={styles.container}>
-          <Layout style={styles.webCameraContainer}>
-          <video
-            ref={videoRef}
-            style={styles.webCameraVideo}
-            autoPlay
-            playsInline
-            muted
-          />
-          <canvas
-            ref={canvasRef}
-            style={{ display: 'none' }}
-          />
-          <Layout style={styles.webCameraControls}>
-            <Button
-              style={styles.button}
-              onPress={closeWebCamera}
-              appearance='ghost'
-            >
-              Cancel
-            </Button>
-            <Button
-              style={styles.captureButton}
-              onPress={captureWebPhoto}
-              accessoryLeft={CameraIcon}
-            >
-              Capture
-            </Button>
-          </Layout>
+      <SafeAreaView style={styles.container}>
+        <Layout style={styles.fullScreen}>
+          <Card style={styles.webCameraCard}>
+            <Text category='h6' style={styles.webCameraTitle}>📷 Take Photo</Text>
+            <Layout style={styles.webCameraContainer}>
+              <video
+                ref={videoRef}
+                style={styles.video}
+                autoPlay
+                playsInline
+                muted
+              />
+              <canvas
+                ref={canvasRef}
+                style={{ display: 'none' }}
+              />
+            </Layout>
+            <Layout style={styles.webCameraControls}>
+              <Button
+                style={styles.webCameraButton}
+                onPress={captureWebPhoto}
+                accessoryLeft={CameraIcon}
+              >
+                Capture
+              </Button>
+              <Button
+                style={styles.webCameraButton}
+                onPress={closeWebCamera}
+                status='basic'
+              >
+                Cancel
+              </Button>
+            </Layout>
+          </Card>
         </Layout>
-      </Layout>
       </SafeAreaView>
     );
   }
 
-  return (
-    <SafeAreaView style={styles.safeArea}>
-      <Layout style={styles.container}>
-        <StatusBar style="dark" backgroundColor="white" translucent={false} />
-        
-        <ScrollView style={styles.scrollContainer}>
-        {/* Header */}
-        <Card style={styles.headerCard}>
-          <Layout style={styles.header}>
-            <Text category='h4' style={styles.title}>📱 Facial Age Estimator</Text>
-            <Text category='s1' style={styles.subtitle}>
-              Estimate biological age from facial features
+  // Step 1: Upload or Take Photo
+  const renderStep1 = () => (
+    <Layout style={styles.stepContainer}>
+      <Layout style={styles.headerContainer}>
+        <Text category='h4' style={styles.stepTitle}>📸 Upload or Take Photo</Text>
+        <Text category='s1' style={styles.stepSubtitle}>
+          Choose a clear photo with visible face(s)
+        </Text>
+      </Layout>
+
+      <Layout style={styles.contentContainer}>
+        <Layout style={styles.apiStatusContainer}>
+          {apiHealth ? (
+            <Text category='c1' style={[
+              styles.apiStatus,
+              apiHealth.status === 'ok' ? styles.apiConnected : styles.apiDisconnected
+            ]}>
+              {apiHealth.status === 'ok' ? '✅ API Connected' : '❌ API Disconnected'}
             </Text>
-            <Divider style={styles.divider} />
-            <Layout style={styles.healthContainer}>
-              <Avatar 
-                size='tiny' 
-                style={[
-                  styles.healthIndicator,
-                  { backgroundColor: apiHealth?.status === 'healthy' ? '#4CAF50' : '#F44336' }
-                ]}
-              />
-              <Text category='c1' style={styles.healthText}>
-                API: {apiHealth?.status === 'healthy' ? 'Connected' : 'Disconnected'}
-              </Text>
-            </Layout>
-          </Layout>
-        </Card>
+          ) : (
+            <Text category='c1' style={styles.apiStatus}>🔄 Checking API...</Text>
+          )}
+        </Layout>
 
-        {/* Action Buttons */}
-        <Card style={styles.card}>
-          <Text category='h6' style={styles.sectionTitle}>📸 Capture Photo</Text>
-          <Layout style={styles.buttonContainer}>
-            <Button
-              style={styles.button}
-              onPress={takePhoto}
-              accessoryLeft={CameraIcon}
-            >
-              Take Photo
-            </Button>
-            <Button
-              style={styles.button}
-              onPress={pickImage}
-              accessoryLeft={ImageIcon}
-            >
-              Choose Photo
-            </Button>
-          </Layout>
-        </Card>
+        <Layout style={styles.buttonContainer}>
+          <Button
+            style={styles.primaryButton}
+            onPress={takePhoto}
+            accessoryLeft={CameraIcon}
+            size='large'
+          >
+            Take A Photo
+          </Button>
+          
+          <Button
+            style={styles.secondaryButton}
+            onPress={pickImage}
+            accessoryLeft={ImageIcon}
+            size='large'
+            status='basic'
+          >
+            Choose From Gallery
+          </Button>
+        </Layout>
+      </Layout>
+    </Layout>
+  );
 
-        {/* Selected Image */}
+  // Step 2: Analyzing Photo
+  const renderStep2 = () => (
+    <Layout style={styles.stepContainer}>
+      <Layout style={styles.headerContainer}>
+        <Text category='h4' style={styles.stepTitle}>🔍 Analyzing Photo</Text>
+        <Text category='s1' style={styles.stepSubtitle}>
+          Please wait while we analyze your photo...
+        </Text>
+      </Layout>
+
+      <Layout style={styles.contentContainer}>
         {selectedImage && (
-          <Card style={styles.card}>
-            <Text category='h6' style={styles.sectionTitle}>📷 Selected Image</Text>
-            <Image source={{ uri: selectedImage.uri }} style={styles.image} />
-            
-            <Layout style={styles.buttonContainer}>
-              <Button
-                style={[styles.button, styles.analyzeButton]}
-                onPress={analyzeFace}
-                disabled={loading}
-                accessoryLeft={loading ? undefined : AnalyticsIcon}
-              >
-                {loading ? <Spinner size='small' /> : 'Analyze Face'}
-              </Button>
-              
-              <Button
-                style={[styles.button, styles.resetButton]}
-                onPress={resetApp}
-                accessoryLeft={RefreshIcon}
-              >
-                Reset
-              </Button>
+          <Layout style={styles.analyzingImageContainer}>
+            <Image 
+              source={{ uri: selectedImage.uri }} 
+              style={styles.analyzingImage}
+              resizeMode="contain"
+            />
+            <Layout style={styles.scanOverlay}>
+              <Layout style={styles.scanLine} />
             </Layout>
-          </Card>
+          </Layout>
         )}
 
-        {/* Results */}
-        {results && (
-          <Card style={styles.card}>
-            <Text category='h6' style={styles.sectionTitle}>🎯 Analysis Results</Text>
-            
-            {/* Face Detection Results */}
-            {results.faces && results.faces.length > 0 ? (
-              results.faces.map((face, index) => (
-                <Card key={index} style={styles.resultCard}>
-                  <Layout style={styles.resultContainer}>
-                    <Text category='h6' style={styles.resultTitle}>
-                      Face {index + 1}
+        <Layout style={styles.loadingContainer}>
+          <Spinner size='large' />
+          <Text category='h6' style={styles.loadingText}>
+            Detecting faces and analyzing age...
+          </Text>
+          <Text category='c1' style={styles.loadingSubtext}>
+            Using Harvard FaceAge + DeepFace models
+          </Text>
+        </Layout>
+      </Layout>
+    </Layout>
+  );
+
+  // Step 3: Show Results
+  const renderStep3 = () => (
+    <Layout style={styles.stepContainer}>
+      <Layout style={styles.headerContainer}>
+        <Text category='h4' style={styles.stepTitle}>🎯 Analysis Results</Text>
+        <Text category='s1' style={styles.stepSubtitle}>
+          Age estimation complete
+        </Text>
+      </Layout>
+
+      <ScrollView style={styles.resultsScrollView}>
+        {results && results.faces && results.faces.length > 0 ? (
+          results.faces.map((face, index) => (
+            <Card key={index} style={styles.resultCard}>
+              <Layout style={styles.resultHeader}>
+                <Text category='h6' style={styles.resultTitle}>
+                  Face {index + 1}
+                </Text>
+                <Text category='c1' style={styles.confidenceText}>
+                  {(face.confidence * 100).toFixed(1)}% confidence
+                </Text>
+              </Layout>
+              
+              <Layout style={styles.resultContent}>
+                {face.harvard_age && (
+                  <Layout style={styles.ageResult}>
+                    <Text category='label' style={styles.ageLabel}>🎯 Harvard Age</Text>
+                    <Text category='h5' style={styles.ageValue}>
+                      {face.harvard_age.toFixed(1)} years
                     </Text>
-                    
-                    {face.harvard_age && (
-                      <Layout style={styles.metricContainer}>
-                        <Text category='label' style={styles.metricLabel}>🎯 Harvard Age</Text>
-                        <Text category='h6' style={styles.metricValue}>
-                          {face.harvard_age.toFixed(1)} years
-                        </Text>
-                      </Layout>
-                    )}
-                    
-                    {face.deepface_age && (
-                      <Layout style={styles.metricContainer}>
-                        <Text category='label' style={styles.metricLabel}>🤖 DeepFace Age</Text>
-                        <Text category='h6' style={styles.metricValue}>
-                          {face.deepface_age.toFixed(1)} years
-                        </Text>
-                      </Layout>
-                    )}
-                    
-                    <Layout style={styles.metricContainer}>
-                      <Text category='label' style={styles.metricLabel}>Face Detection</Text>
-                      <Text category='h6' style={styles.metricValue}>
-                        {(face.confidence * 100).toFixed(1)}%
-                      </Text>
-                    </Layout>
-                    
-                    {/* Age Category */}
-                    <Layout style={styles.categoryContainer}>
-                      {(() => {
-                        const primaryAge = face.harvard_age || face.deepface_age;
-                        if (primaryAge < 30) {
-                          return (
-                            <Text category='h6' style={[styles.categoryText, styles.youngText]}>
-                              😊 Young
-                            </Text>
-                          );
-                        } else if (primaryAge < 50) {
-                          return (
-                            <Text category='h6' style={[styles.categoryText, styles.adultText]}>
-                              😐 Adult
-                            </Text>
-                          );
-                        } else {
-                          return (
-                            <Text category='h6' style={[styles.categoryText, styles.seniorText]}>
-                              👴 Senior
-                            </Text>
-                          );
-                        }
-                      })()}
-                    </Layout>
                   </Layout>
-                </Card>
-              ))
-            ) : (
-              <Text category='s1' style={styles.noResultsText}>
-                No faces detected in the image
-              </Text>
-            )}
+                )}
+                
+                {face.deepface_age && (
+                  <Layout style={styles.ageResult}>
+                    <Text category='label' style={styles.ageLabel}>🤖 DeepFace Age</Text>
+                    <Text category='h5' style={styles.ageValue}>
+                      {face.deepface_age.toFixed(1)} years
+                    </Text>
+                  </Layout>
+                )}
+                
+                {/* Age Category */}
+                <Layout style={styles.categoryContainer}>
+                  {(() => {
+                    const primaryAge = face.harvard_age || face.deepface_age;
+                    if (primaryAge < 30) {
+                      return (
+                        <Text category='h6' style={[styles.categoryText, styles.youngText]}>
+                          😊 Young
+                        </Text>
+                      );
+                    } else if (primaryAge < 50) {
+                      return (
+                        <Text category='h6' style={[styles.categoryText, styles.adultText]}>
+                          😐 Adult
+                        </Text>
+                      );
+                    } else {
+                      return (
+                        <Text category='h6' style={[styles.categoryText, styles.seniorText]}>
+                          👴 Senior
+                        </Text>
+                      );
+                    }
+                  })()}
+                </Layout>
+              </Layout>
+            </Card>
+          ))
+        ) : (
+          <Card style={styles.noResultsCard}>
+            <Text category='h6' style={styles.noResultsText}>
+              No faces detected in the image
+            </Text>
+            <Text category='c1' style={styles.noResultsSubtext}>
+              Try a clearer photo with visible faces
+            </Text>
           </Card>
         )}
       </ScrollView>
+
+      <Layout style={styles.resultsActions}>
+        <Button
+          style={styles.secondaryButton}
+          onPress={() => setCurrentStep(1)}
+          accessoryLeft={ArrowBackIcon}
+          status='basic'
+        >
+          Try Another Photo
+        </Button>
+        
+        <Button
+          style={styles.primaryButton}
+          onPress={resetApp}
+          accessoryLeft={RefreshIcon}
+        >
+          Start Over
+        </Button>
+      </Layout>
     </Layout>
+  );
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <StatusBar style="auto" />
+      <Layout style={styles.fullScreen}>
+        {currentStep === 1 && renderStep1()}
+        {currentStep === 2 && renderStep2()}
+        {currentStep === 3 && renderStep3()}
+      </Layout>
     </SafeAreaView>
   );
 }
@@ -503,254 +545,197 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: 'white',
-  },
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#f8f9fa',
   },
-  scrollContainer: {
-    padding: 15,
+  fullScreen: {
+    flex: 1,
   },
-  headerCard: {
-    marginBottom: 15,
+  stepContainer: {
+    flex: 1,
+    padding: 20,
   },
-  header: {
+  headerContainer: {
     alignItems: 'center',
+    marginBottom: 30,
+    paddingTop: 20,
   },
-  title: {
+  stepTitle: {
     textAlign: 'center',
-    marginBottom: 5,
+    marginBottom: 10,
+    fontWeight: 'bold',
   },
-  subtitle: {
+  stepSubtitle: {
     textAlign: 'center',
-    marginBottom: 15,
+    opacity: 0.7,
   },
-  divider: {
-    marginVertical: 15,
-  },
-  healthContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  contentContainer: {
+    flex: 1,
     justifyContent: 'center',
   },
-  healthIndicator: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 8,
+  apiStatusContainer: {
+    alignItems: 'center',
+    marginBottom: 30,
   },
-  healthText: {
+  apiStatus: {
     fontSize: 14,
+    fontWeight: '600',
   },
-  card: {
-    marginBottom: 15,
+  apiConnected: {
+    color: '#4CAF50',
   },
-  sectionTitle: {
-    textAlign: 'center',
-    marginBottom: 15,
+  apiDisconnected: {
+    color: '#f44336',
   },
   buttonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginTop: 15,
+    gap: 20,
   },
-  button: {
-    minWidth: 120,
-    marginHorizontal: 5,
+  primaryButton: {
+    borderRadius: 25,
+    paddingVertical: 15,
   },
-  analyzeButton: {
-    minWidth: 120,
-    marginHorizontal: 5,
+  secondaryButton: {
+    borderRadius: 25,
+    paddingVertical: 15,
   },
-  resetButton: {
-    minWidth: 120,
-    marginHorizontal: 5,
-  },
-  image: {
-    width: '100%',
-    height: (width - 100) * 0.75,
-    borderRadius: 8,
-    alignSelf: 'center',
-    marginBottom: 15,
-  },
-  // Web camera styles
-  webCameraContainer: {
-    flex: 1,
-    justifyContent: 'center',
+  analyzingImageContainer: {
     alignItems: 'center',
-    backgroundColor: '#000',
+    marginBottom: 40,
+    position: 'relative',
   },
-  webCameraVideo: {
-    width: '100%',
-    maxWidth: 640,
-    height: 'auto',
-    borderRadius: 10,
+  analyzingImage: {
+    width: width * 0.8,
+    height: width * 0.6,
+    borderRadius: 15,
   },
-  webCameraControls: {
+  scanOverlay: {
     position: 'absolute',
-    bottom: 50,
+    top: 0,
     left: 0,
     right: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-  captureButton: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-  },
-  resultContainer: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  resultTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 10,
-  },
-  resultText: {
-    fontSize: 16,
-    color: '#666',
-    marginTop: 10,
-  },
-  faceResult: {
-    backgroundColor: '#f9f9f9',
-    borderRadius: 8,
-    padding: 15,
-    marginBottom: 15,
-  },
-  faceTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 10,
-    textAlign: 'center',
-  },
-  faceImage: {
-    width: 150,
-    height: 150,
-    borderRadius: 8,
-    alignSelf: 'center',
-    marginBottom: 15,
-  },
-  ageContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: 15,
-  },
-  ageResult: {
-    alignItems: 'center',
-  },
-  ageLabel: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 5,
-  },
-  ageValue: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  categoryBadge: {
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 20,
-    alignSelf: 'center',
-  },
-  categoryText: {
-    color: 'white',
-    fontWeight: 'bold',
-  },
-  modelInfo: {
-    backgroundColor: '#f9f9f9',
-    borderRadius: 8,
-    padding: 15,
-    marginBottom: 15,
-  },
-  modelTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 8,
-  },
-  modelDescription: {
-    fontSize: 14,
-    color: '#666',
-    lineHeight: 20,
-  },
-  warningContainer: {
-    backgroundColor: '#FFF3CD',
-    borderRadius: 8,
-    padding: 15,
-    borderLeftWidth: 4,
-    borderLeftColor: '#FF9800',
-  },
-  warningText: {
-    fontSize: 14,
-    color: '#856404',
-    lineHeight: 20,
-  },
-  // New styles for UI Kitten
-  centerContent: {
-    flex: 1,
+    bottom: 0,
     justifyContent: 'center',
     alignItems: 'center',
   },
+  scanLine: {
+    width: '90%',
+    height: 3,
+    backgroundColor: '#00E676',
+    borderRadius: 2,
+    opacity: 0.8,
+  },
+  loadingContainer: {
+    alignItems: 'center',
+    gap: 15,
+  },
   loadingText: {
+    textAlign: 'center',
     marginTop: 10,
   },
-  errorText: {
+  loadingSubtext: {
     textAlign: 'center',
+    opacity: 0.6,
   },
-  errorSubtext: {
-    textAlign: 'center',
-    marginTop: 5,
-  },
-  cameraHeader: {
-    position: 'absolute',
-    top: 50,
-    right: 20,
-    zIndex: 1,
+  resultsScrollView: {
+    flex: 1,
   },
   resultCard: {
     marginBottom: 15,
+    borderRadius: 15,
   },
-  metricContainer: {
+  resultHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 15,
   },
-  metricLabel: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 5,
-  },
-  metricValue: {
-    fontSize: 18,
+  resultTitle: {
     fontWeight: 'bold',
-    color: '#333',
+  },
+  confidenceText: {
+    opacity: 0.7,
+  },
+  resultContent: {
+    gap: 15,
+  },
+  ageResult: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 10,
+  },
+  ageLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  ageValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#2196F3',
   },
   categoryContainer: {
-    alignSelf: 'center',
-    marginTop: 15,
+    alignItems: 'center',
+    paddingVertical: 15,
+  },
+  categoryText: {
+    fontSize: 18,
+    fontWeight: 'bold',
   },
   youngText: {
-    backgroundColor: '#4CAF50',
+    color: '#4CAF50',
   },
   adultText: {
-    backgroundColor: '#2196F3',
+    color: '#FF9800',
   },
   seniorText: {
-    backgroundColor: '#FF9800',
+    color: '#9C27B0',
+  },
+  noResultsCard: {
+    alignItems: 'center',
+    padding: 30,
+    borderRadius: 15,
   },
   noResultsText: {
     textAlign: 'center',
-    color: '#666',
+    marginBottom: 10,
+  },
+  noResultsSubtext: {
+    textAlign: 'center',
+    opacity: 0.6,
+  },
+  resultsActions: {
+    flexDirection: 'row',
+    gap: 15,
     marginTop: 20,
+  },
+  webCameraCard: {
+    flex: 1,
+    margin: 20,
+  },
+  webCameraTitle: {
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  webCameraContainer: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  video: {
+    width: '100%',
+    maxWidth: 400,
+    height: 300,
+    borderRadius: 10,
+  },
+  webCameraControls: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    gap: 10,
+  },
+  webCameraButton: {
+    flex: 1,
   },
 });
