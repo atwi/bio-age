@@ -3,18 +3,25 @@
   "deploy": {
     "restartPolicyType": "ON_FAILURE",
     "sleepApplication": false,
-    "cronSchedule": null
+    "cronSchedule": null,
+    "healthcheckPath": "/health",
+    "healthcheckTimeout": 300
   },
   "build": {
     "builder": "NIXPACKS",
-    "buildCommand": "pip install -r requirements.txt && cd FaceAgeApp && npm install && npx expo export --platform web",
+    "buildCommand": "pip install --no-cache-dir -r requirements.txt && cd FaceAgeApp && npm install --production && npx expo export --platform web",
     "watchPatterns": ["**/*"]
   },
   "environments": {
     "production": {
       "variables": {
         "PYTHONPATH": "/app",
-        "PORT": "8000"
+        "PORT": "8000",
+        "TF_CPP_MIN_LOG_LEVEL": "3",
+        "TF_ENABLE_ONEDNN_OPTS": "0",
+        "CUDA_VISIBLE_DEVICES": "-1",
+        "LOAD_HARVARD_MODEL": "false",
+        "RAILWAY_ENVIRONMENT": "production"
       }
     }
   }
