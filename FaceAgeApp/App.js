@@ -348,9 +348,9 @@ function AppContent() {
           {apiHealth ? (
             <Text category='c1' style={[
               styles.apiStatus,
-              apiHealth.status === 'ok' ? styles.apiConnected : styles.apiDisconnected
+              apiHealth.status === 'healthy' ? styles.apiConnected : styles.apiDisconnected
             ]}>
-              {apiHealth.status === 'ok' ? '✅ API Connected' : '❌ API Disconnected'}
+              {apiHealth.status === 'healthy' ? '✅ API Connected' : '❌ API Disconnected'}
             </Text>
           ) : (
             <Text category='c1' style={styles.apiStatus}>🔄 Checking API...</Text>
