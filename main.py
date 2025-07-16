@@ -8,192 +8,330 @@ Railway-optimized with graceful fallback and memory optimization
 import os
 import sys
 import gc
+import time
+import base64
 import logging
-from pathlib import Path
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-import uvicorn
+from io import BytesIO
+from typing import Optional, Dict, Any, List
+from contextlib import asynccontextmanager
 
-# Setup logging for Railway
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+import numpy as np
+import uvicorn
+from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from PIL import Image
+
+# Global variables for lazy loading
+detector = None
+harvard_model = None
+deepface_ready = False
+models_loading = False
+
+# Environment detection
+IS_RAILWAY = os.environ.get('RAILWAY_ENVIRONMENT') == 'production'
+LOAD_HARVARD = os.environ.get('LOAD_HARVARD_MODEL', 'true').lower() == 'true'
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Detect Railway environment
-IS_RAILWAY = 'RAILWAY_ENVIRONMENT' in os.environ
-IS_CLOUD = IS_RAILWAY or 'DYNO' in os.environ
+# TensorFlow setup
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
-if IS_CLOUD:
-    logger.info("🌐 Running in cloud environment (Railway/Heroku)")
-    # Cloud-specific optimizations
-    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-    os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
-    os.environ['CUDA_VISIBLE_DEVICES'] = '-1'  # Force CPU only
-else:
-    logger.info("🖥️ Running locally")
+if IS_RAILWAY:
+    os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+    os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
 
-# Add the current directory to Python path
-sys.path.insert(0, str(Path(__file__).parent))
+class FaceResult(BaseModel):
+    face_id: int
+    age_harvard: Optional[float] = None
+    age_deepface: Optional[float] = None
+    confidence: float
+    face_crop_base64: str
 
-# Import the API backend and its initialization functions
-import api_backend
-from api_backend import app as api_app, init_face_detector, load_harvard_model, test_deepface
+class AnalyzeResponse(BaseModel):
+    success: bool
+    faces: List[FaceResult]
+    message: str
 
-# Create the main app
-app = FastAPI(title="Bio Age Estimator", description="Full-stack deployment")
-
-# Railway-optimized model initialization
-def initialize_models():
-    """Initialize models with graceful fallback for Railway"""
-    logger.info("🔄 Initializing models...")
+def lazy_load_models():
+    """Lazy load models only when needed"""
+    global detector, harvard_model, deepface_ready, models_loading
     
-    model_status = {
-        'face_detector': False,
-        'harvard_model': False,
-        'deepface': False
-    }
+    if models_loading:
+        return False
     
-    # Initialize face detector (essential)
+    if detector is not None and (harvard_model is not None or not LOAD_HARVARD) and deepface_ready:
+        return True
+    
+    models_loading = True
+    logger.info("🔄 Lazy loading models...")
+    
     try:
-        if init_face_detector():
-            logger.info("✅ Face detector initialized successfully")
-            model_status['face_detector'] = True
-        else:
-            logger.warning("⚠️ Face detector initialization failed")
+        # Load face detector first (smallest)
+        if detector is None:
+            logger.info("Loading face detector...")
+            from mtcnn import MTCNN
+            detector = MTCNN()
+            logger.info("✅ Face detector loaded")
+            gc.collect()
+        
+        # Load Harvard model if enabled
+        if LOAD_HARVARD and harvard_model is None:
+            logger.info("Loading Harvard model...")
+            harvard_model = load_harvard_model()
+            if harvard_model:
+                logger.info("✅ Harvard model loaded")
+            gc.collect()
+        
+        # Test DeepFace last (largest)
+        if not deepface_ready:
+            logger.info("Initializing DeepFace...")
+            deepface_ready = test_deepface()
+            if deepface_ready:
+                logger.info("✅ DeepFace initialized")
+            gc.collect()
+        
+        models_loading = False
+        return detector is not None and (harvard_model is not None or not LOAD_HARVARD) and deepface_ready
+        
     except Exception as e:
-        logger.error(f"❌ Face detector failed: {e}")
+        logger.error(f"❌ Model loading failed: {e}")
+        models_loading = False
+        return False
+
+def load_harvard_model():
+    """Load Harvard model with enhanced error handling"""
+    import tensorflow as tf
+    import keras
     
-    # Initialize Harvard model (optional for Railway)
+    # Try different possible paths
+    possible_paths = [
+        "FaceAge/models/model_saved_tf",
+        "./FaceAge/models/model_saved_tf",
+        "model_saved_tf",
+        "./model_saved_tf"
+    ]
+    
+    for model_path in possible_paths:
+        if os.path.exists(model_path):
+            try:
+                logger.info(f"Loading Harvard model from: {model_path}")
+                model = tf.keras.models.load_model(model_path)
+                return model
+            except Exception as e:
+                logger.warning(f"Failed to load from {model_path}: {e}")
+                continue
+    
+    logger.warning("Harvard model not found or failed to load")
+    return None
+
+def test_deepface():
+    """Test DeepFace initialization"""
     try:
-        if not IS_RAILWAY or os.environ.get('LOAD_HARVARD_MODEL', 'false').lower() == 'true':
-            if load_harvard_model():
-                logger.info("✅ Harvard model loaded successfully")
-                model_status['harvard_model'] = True
-            else:
-                logger.warning("⚠️ Harvard model not available")
-        else:
-            logger.info("ℹ️ Harvard model disabled for Railway deployment")
+        from deepface import DeepFace
+        
+        # Create minimal test image
+        test_img = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
+        
+        # Test DeepFace
+        result = DeepFace.analyze(
+            test_img,
+            actions=['age'],
+            enforce_detection=False,
+            silent=True
+        )
+        
+        # Clean up
+        del test_img, result
+        gc.collect()
+        
+        return True
+        
     except Exception as e:
-        logger.error(f"❌ Harvard model failed: {e}")
-    
-    # Test DeepFace (essential)
-    try:
-        if test_deepface():
-            logger.info("✅ DeepFace test successful")
-            model_status['deepface'] = True
-        else:
-            logger.warning("⚠️ DeepFace not available")
-    except Exception as e:
-        logger.error(f"❌ DeepFace failed: {e}")
-    
-    # Force garbage collection
-    gc.collect()
-    
-    logger.info("🚀 API server ready!")
-    
-    # Verify the models are set in api_backend
-    logger.info(f"📊 Model status: {model_status}")
-    logger.info(f"🔍 Face detector: {api_backend.face_detector is not None}")
-    logger.info(f"🎯 Harvard model: {api_backend.harvard_model is not None}")
-    
-    return model_status
+        logger.error(f"DeepFace test failed: {e}")
+        return False
 
-# Mount the API backend under /api
-app.mount("/api", api_app)
+# FastAPI app without startup model loading
+app = FastAPI(
+    title="Bio Age Estimator API",
+    description="Facial age estimation using Harvard FaceAge and DeepFace models",
+    version="1.0.0"
+)
 
-# Check if React Native web build exists
-web_build_path = Path("FaceAgeApp/dist")
-logger.info(f"📁 Web build path: {web_build_path}")
-logger.info(f"🌐 Frontend available: {web_build_path.exists()}")
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# Health check for the main app (define after web_build_path)
+@app.get("/")
+async def root():
+    """Root endpoint serving the React Native web build"""
+    web_build_path = "FaceAgeApp/dist"
+    if os.path.exists(f"{web_build_path}/index.html"):
+        return FileResponse(f"{web_build_path}/index.html")
+    return {"message": "Bio Age Estimator API", "status": "running"}
+
 @app.get("/health")
 async def health_check():
-    """Health check for the main deployment"""
+    """Health check endpoint"""
+    return {"status": "healthy", "timestamp": time.time()}
+
+@app.get("/api/health")
+async def api_health_check():
+    """API health check with model status"""
+    global detector, harvard_model, deepface_ready
+    
     return {
         "status": "healthy",
-        "service": "bio-age-estimator",
-        "frontend": "available" if web_build_path.exists() else "not_built",
-        "backend": "available",
-        "environment": "railway" if IS_RAILWAY else "local",
         "models": {
-            "face_detector": api_backend.face_detector is not None,
-            "harvard_model": api_backend.harvard_model is not None
-        }
+            "face_detector": detector is not None,
+            "harvard_model": harvard_model is not None,
+            "deepface": deepface_ready
+        },
+        "timestamp": time.time()
     }
 
-if web_build_path.exists():
-    # Serve static files (React Native web build)
-    app.mount("/static", StaticFiles(directory=str(web_build_path)), name="static")
-    
-    # Serve the React Native app for all other routes (except health)
-    @app.get("/{path:path}")
-    async def serve_react_app(path: str):
-        """Serve the React Native web app"""
-        # Skip health endpoint
-        if path == "health":
-            return await health_check()
-            
-        file_path = web_build_path / path
-        
-        # If file exists, serve it
-        if file_path.exists() and file_path.is_file():
-            return FileResponse(file_path)
-        
-        # Otherwise, serve index.html (SPA routing)
-        index_path = web_build_path / "index.html"
-        if index_path.exists():
-            return FileResponse(index_path)
-        
-        raise HTTPException(status_code=404, detail="Not found")
-    
-    # Root route serves the React app
-    @app.get("/")
-    async def serve_root():
-        """Serve the React Native web app root"""
-        index_path = web_build_path / "index.html"
-        if index_path.exists():
-            return FileResponse(index_path)
-        return {"message": "React Native web build not found. API is available at /api"}
-
-else:
-    # Fallback if web build doesn't exist
-    @app.get("/")
-    async def root():
-        return {
-            "message": "Bio Age Estimator API", 
-            "api_docs": "/docs",
-            "api_health": "/api/health",
-            "note": "React Native web build not found. Run 'cd FaceAgeApp && npx expo export --platform web' to build the frontend.",
-            "environment": "railway" if IS_RAILWAY else "local"
-        }
-
-if __name__ == "__main__":
-    # Get port from environment variable (Railway/Render set this)
-    port = int(os.environ.get("PORT", 8000))
-    
-    logger.info(f"🚀 Starting Bio Age Estimator on port {port}")
-    logger.info(f"🌐 Environment: {'Railway' if IS_RAILWAY else 'Local'}")
-    
-    # Initialize models before starting server
+@app.post("/api/analyze-face", response_model=AnalyzeResponse)
+async def analyze_face(file: UploadFile = File(...)):
+    """Analyze face with lazy model loading"""
     try:
-        model_status = initialize_models()
+        # Lazy load models on first request
+        if not lazy_load_models():
+            raise HTTPException(status_code=500, detail="Models failed to load")
         
-        # Check if at least face detector and deepface are working
-        if not model_status['face_detector'] or not model_status['deepface']:
-            logger.warning("⚠️ Essential models failed to load, but continuing deployment")
+        # Read and process image
+        contents = await file.read()
+        image = Image.open(BytesIO(contents)).convert('RGB')
+        img_array = np.array(image)
+        
+        # Detect faces
+        faces = detector.detect_faces(img_array)
+        
+        if not faces:
+            return AnalyzeResponse(
+                success=False,
+                faces=[],
+                message="No face detected"
+            )
+        
+        # Filter faces with confidence >= 0.9
+        high_confidence_faces = [f for f in faces if f['confidence'] >= 0.9]
+        
+        if not high_confidence_faces:
+            return AnalyzeResponse(
+                success=False,
+                faces=[],
+                message="No high-confidence faces detected (≥90% confidence required)"
+            )
+        
+        results = []
+        
+        for i, face in enumerate(high_confidence_faces):
+            try:
+                x, y, w, h = face['box']
+                x, y = max(0, x), max(0, y)
+                
+                # Extract face crop
+                face_crop = img_array[y:y+h, x:x+w]
+                
+                # Create base64 face crop
+                face_pil = Image.fromarray(face_crop)
+                face_buffer = BytesIO()
+                face_pil.save(face_buffer, format='PNG')
+                face_base64 = base64.b64encode(face_buffer.getvalue()).decode('utf-8')
+                
+                # Harvard model prediction
+                harvard_age = None
+                if harvard_model is not None:
+                    try:
+                        import cv2
+                        face_resized = cv2.resize(face_crop, (160, 160))
+                        face_pil_resized = Image.fromarray(face_resized).convert('RGB')
+                        face_array = np.asarray(face_pil_resized)
+                        mean, std = face_array.mean(), face_array.std()
+                        if std == 0:
+                            std = 1
+                        face_normalized = (face_array - mean) / std
+                        face_input = face_normalized.reshape(1, 160, 160, 3)
+                        
+                        prediction = harvard_model.predict(face_input, verbose=0)
+                        harvard_age = float(np.squeeze(prediction))
+                        harvard_age = max(0, min(120, harvard_age))
+                        
+                    except Exception as e:
+                        logger.warning(f"Harvard prediction failed: {e}")
+                
+                # DeepFace prediction
+                deepface_age = None
+                if deepface_ready:
+                    try:
+                        import cv2
+                        from deepface import DeepFace
+                        
+                        face_resized = cv2.resize(face_crop, (224, 224))
+                        face_resized = np.clip(face_resized, 0, 255).astype(np.uint8)
+                        
+                        result = DeepFace.analyze(
+                            face_resized,
+                            actions=['age'],
+                            enforce_detection=False,
+                            silent=True
+                        )
+                        
+                        if isinstance(result, list):
+                            deepface_age = result[0]['age']
+                        else:
+                            deepface_age = result['age']
+                        
+                        deepface_age = max(10, min(100, deepface_age))
+                        
+                    except Exception as e:
+                        logger.warning(f"DeepFace prediction failed: {e}")
+                
+                results.append(FaceResult(
+                    face_id=i,
+                    age_harvard=harvard_age,
+                    age_deepface=deepface_age,
+                    confidence=face['confidence'],
+                    face_crop_base64=face_base64
+                ))
+                
+            except Exception as e:
+                logger.error(f"Error processing face {i}: {e}")
+                continue
+        
+        return AnalyzeResponse(
+            success=True,
+            faces=results,
+            message=f"Found {len(results)} high-confidence face(s)"
+        )
         
     except Exception as e:
-        logger.error(f"❌ Model initialization failed: {e}")
-        logger.warning("⚠️ Continuing deployment without models")
+        logger.error(f"Error analyzing face: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Mount static files for React Native web build
+web_build_path = "FaceAgeApp/dist"
+if os.path.exists(web_build_path):
+    app.mount("/", StaticFiles(directory=web_build_path, html=True), name="static")
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))
     
-    # Run the server
-    uvicorn.run(
-        app,
-        host="0.0.0.0",
-        port=port,
-        log_level="info"
-    ) 
+    print(f"🚀 Starting Bio Age Estimator on port {port}")
+    print(f"📁 Web build path: {web_build_path}")
+    print(f"🌐 Frontend available: {os.path.exists(web_build_path)}")
+    print(f"🔧 Railway environment: {IS_RAILWAY}")
+    print(f"📊 Harvard model enabled: {LOAD_HARVARD}")
+    print(f"⚡ Using lazy loading for models")
+    
+    uvicorn.run(app, host="0.0.0.0", port=port) 

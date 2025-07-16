@@ -1,27 +1,27 @@
 {
   "$schema": "https://railway.app/railway.schema.json",
-  "deploy": {
-    "restartPolicyType": "ON_FAILURE",
-    "sleepApplication": false,
-    "cronSchedule": null,
-    "healthcheckPath": "/health",
-    "healthcheckTimeout": 300
-  },
   "build": {
-    "builder": "NIXPACKS",
+    "builder": "nixpacks",
     "buildCommand": "pip install --no-cache-dir -r requirements.txt && cd FaceAgeApp && npm install --production && npx expo export --platform web",
-    "watchPatterns": ["**/*"]
+    "watchPatterns": ["**/*.py", "**/*.tsx", "**/*.ts", "**/*.js", "**/*.json"]
+  },
+  "deploy": {
+    "startCommand": "python main.py",
+    "healthcheckPath": "/health",
+    "healthcheckTimeout": 300,
+    "restartPolicyType": "on_failure"
   },
   "environments": {
     "production": {
       "variables": {
-        "PYTHONPATH": "/app",
-        "PORT": "8000",
+        "RAILWAY_ENVIRONMENT": "production",
+        "LOAD_HARVARD_MODEL": "true",
         "TF_CPP_MIN_LOG_LEVEL": "3",
         "TF_ENABLE_ONEDNN_OPTS": "0",
         "CUDA_VISIBLE_DEVICES": "-1",
-        "LOAD_HARVARD_MODEL": "false",
-        "RAILWAY_ENVIRONMENT": "production"
+        "TF_FORCE_GPU_ALLOW_GROWTH": "true",
+        "PYTHONUNBUFFERED": "1",
+        "NODE_ENV": "production"
       }
     }
   }

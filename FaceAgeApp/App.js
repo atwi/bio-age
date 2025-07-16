@@ -525,20 +525,20 @@ function AppContent() {
                 )}
                 
                 <Layout style={styles.ageResultsContainer}>
-                  {face.harvard_age && (
+                  {face.age_harvard && (
                     <Layout style={styles.ageResult}>
                       <Text category='label' style={styles.ageLabel}>🎯 Harvard Age</Text>
                       <Text category='h5' style={styles.ageValue}>
-                        {face.harvard_age.toFixed(1)} years
+                        {face.age_harvard.toFixed(1)} years
                       </Text>
                     </Layout>
                   )}
                   
-                  {face.deepface_age && (
+                  {face.age_deepface && (
                     <Layout style={styles.ageResult}>
                       <Text category='label' style={styles.ageLabel}>🤖 DeepFace Age</Text>
                       <Text category='h5' style={styles.ageValue}>
-                        {face.deepface_age.toFixed(1)} years
+                        {face.age_deepface.toFixed(1)} years
                       </Text>
                     </Layout>
                   )}
@@ -547,7 +547,7 @@ function AppContent() {
                 {/* Age Category */}
                 <Layout style={styles.categoryContainer}>
                   {(() => {
-                    const primaryAge = face.harvard_age || face.deepface_age;
+                    const primaryAge = face.age_harvard || face.age_deepface;
                     if (primaryAge < 30) {
                       return (
                         <Text category='h6' style={[styles.categoryText, styles.youngText]}>
