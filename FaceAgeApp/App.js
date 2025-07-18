@@ -666,7 +666,7 @@ function AppContent() {
             Detecting faces and analyzing age...
           </Text>
           <Text category='c1' style={styles.loadingSubtext}>
-            Using Harvard FaceAge + DeepFace models
+            Using Harvard FaceAge, DeepFace + OpenAI models
           </Text>
         </Layout>
       </Layout>

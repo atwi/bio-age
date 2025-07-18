@@ -42,6 +42,7 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 # Environment detection
 IS_RAILWAY = os.environ.get('RAILWAY_ENVIRONMENT') == 'production'
 LOAD_HARVARD = os.environ.get('LOAD_HARVARD_MODEL', 'true').lower() == 'true'
+ENABLE_DEEPFACE = os.environ.get('ENABLE_DEEPFACE', 'true').lower() == 'true'
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -75,7 +76,7 @@ def lazy_load_models():
     if models_loading:
         return False
     
-    if detector is not None and (harvard_model is not None or not LOAD_HARVARD) and deepface_ready:
+    if detector is not None and (harvard_model is not None or not LOAD_HARVARD) and (deepface_ready or not ENABLE_DEEPFACE):
         return True
     
     models_loading = True
@@ -98,16 +99,19 @@ def lazy_load_models():
                 logger.info("✅ Harvard model loaded")
             gc.collect()
         
-        # Test DeepFace last (largest)
-        if not deepface_ready:
+        # Test DeepFace last (largest) - only if enabled
+        if ENABLE_DEEPFACE and not deepface_ready:
             logger.info("Initializing DeepFace...")
             deepface_ready = test_deepface()
             if deepface_ready:
                 logger.info("✅ DeepFace initialized")
             gc.collect()
+        elif not ENABLE_DEEPFACE:
+            logger.info("🚫 DeepFace disabled by configuration")
+            deepface_ready = True  # Mark as ready to skip loading
         
         models_loading = False
-        return detector is not None and (harvard_model is not None or not LOAD_HARVARD) and deepface_ready
+        return detector is not None and (harvard_model is not None or not LOAD_HARVARD) and (deepface_ready or not ENABLE_DEEPFACE)
         
     except Exception as e:
         logger.error(f"❌ Model loading failed: {e}")
@@ -286,7 +290,12 @@ async def api_health_check():
         "models": {
             "face_detector": detector is not None,
             "harvard_model": harvard_model is not None,
-            "deepface": deepface_ready
+            "deepface": deepface_ready if ENABLE_DEEPFACE else "disabled"
+        },
+        "config": {
+            "enable_deepface": ENABLE_DEEPFACE,
+            "load_harvard": LOAD_HARVARD,
+            "is_railway": IS_RAILWAY
         },
         "timestamp": time.time()
     }
@@ -363,7 +372,7 @@ async def analyze_face(file: UploadFile = File(...)):
                 
                 # DeepFace prediction
                 deepface_age = None
-                if deepface_ready:
+                if ENABLE_DEEPFACE and deepface_ready:
                     try:
                         import cv2
                         from deepface import DeepFace
@@ -387,6 +396,8 @@ async def analyze_face(file: UploadFile = File(...)):
                         
                     except Exception as e:
                         logger.warning(f"DeepFace prediction failed: {e}")
+                elif not ENABLE_DEEPFACE:
+                    logger.info("🚫 DeepFace prediction skipped (disabled)")
                 
                 # ChatGPT prediction
                 chatgpt_age = None
@@ -431,6 +442,7 @@ if __name__ == "__main__":
     print(f"🌐 Frontend available: {os.path.exists(web_build_path)}")
     print(f"🔧 Railway environment: {IS_RAILWAY}")
     print(f"📊 Harvard model enabled: {LOAD_HARVARD}")
+    print(f"🤖 DeepFace enabled: {ENABLE_DEEPFACE}")
     print(f"⚡ Using lazy loading for models")
     
     uvicorn.run(app, host="0.0.0.0", port=port) 

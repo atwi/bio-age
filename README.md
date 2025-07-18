@@ -37,12 +37,17 @@ pip install -r requirements.txt
 
 4. Set up environment variables:
 ```bash
-# Copy the example environment file
-cp .env.example .env
-
-# Edit .env and add your OpenAI API key
-# OPENAI_API_KEY=your_openai_api_key_here
+# Create a .env file with your configuration
+echo "OPENAI_API_KEY=your_openai_api_key_here" > .env
+echo "ENABLE_DEEPFACE=true" >> .env
+echo "LOAD_HARVARD_MODEL=true" >> .env
 ```
+
+**Environment Variables:**
+- `OPENAI_API_KEY`: Your OpenAI API key for ChatGPT age estimation
+- `ENABLE_DEEPFACE`: Set to `false` to disable DeepFace (useful for cloud deployments with limited resources)
+- `LOAD_HARVARD_MODEL`: Set to `false` to disable Harvard model
+- `PORT`: Server port (default: 8000)
 
 5. Run the application:
 ```bash
