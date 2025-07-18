@@ -8,7 +8,7 @@
   "deploy": {
     "startCommand": "python main.py",
     "healthcheckPath": "/health",
-    "healthcheckTimeout": 300,
+    "healthcheckTimeout": 600,
     "restartPolicyType": "on_failure"
   },
   "environments": {
@@ -16,6 +16,7 @@
       "variables": {
         "RAILWAY_ENVIRONMENT": "production",
         "LOAD_HARVARD_MODEL": "true",
+        "ENABLE_DEEPFACE": "false",
         "TF_CPP_MIN_LOG_LEVEL": "3",
         "TF_ENABLE_ONEDNN_OPTS": "0",
         "CUDA_VISIBLE_DEVICES": "-1",
