@@ -41,7 +41,9 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 
 # Environment detection
 IS_RAILWAY = os.environ.get('RAILWAY_ENVIRONMENT') == 'production'
-LOAD_HARVARD = os.environ.get('LOAD_HARVARD_MODEL', 'true').lower() == 'true'
+# Disable Harvard model on Railway due to download timeouts
+IS_RAILWAY = os.environ.get('RAILWAY_ENVIRONMENT', 'false').lower() == 'true'
+LOAD_HARVARD = os.environ.get('LOAD_HARVARD_MODEL', 'true').lower() == 'true' and not IS_RAILWAY
 ENABLE_DEEPFACE = os.environ.get('ENABLE_DEEPFACE', 'true').lower() == 'true'
 
 # Debug logging for environment variables - FORCE REDEPLOY 2024-12-19
@@ -173,7 +175,7 @@ def download_harvard_model():
                 elif source['method'] == "gdown_alt":
                     gdown.download(source['url'], MODEL_ZIP, quiet=False, fuzzy=True)
                 elif source['method'] == "requests":
-                    response = requests.get(source['url'], stream=True)
+                    response = requests.get(source['url'], stream=True, timeout=30)
                     response.raise_for_status()
                     with open(MODEL_ZIP, 'wb') as f:
                         for chunk in response.iter_content(chunk_size=8192):
