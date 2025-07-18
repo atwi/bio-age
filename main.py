@@ -148,12 +148,12 @@ def download_harvard_model():
     download_sources = [
         {
             "name": "Google Drive (Direct)",
-            "url": "https://drive.google.com/uc?id=1-4PXalQehNn_XqKdIV1X22t0dilB5apC",
+            "url": "https://drive.google.com/uc?id=12wNpYBz3j5mP9mt6S_ZH4k0sI6dVDeVV",
             "method": "gdown"
         },
         {
             "name": "Google Drive (Alternative)",
-            "url": "https://drive.google.com/file/d/1-4PXalQehNn_XqKdIV1X22t0dilB5apC/view?usp=sharing",
+            "url": "https://drive.google.com/file/d/12wNpYBz3j5mP9mt6S_ZH4k0sI6dVDeVV/view?usp=sharing",
             "method": "gdown_alt"
         },
         {
