@@ -149,15 +149,44 @@ def load_harvard_model():
         "./FaceAge/models/model_saved_tf"
     ]
     
+    # Debug: list all files in current directory
+    logger.info(f"Current directory contents: {os.listdir('.')}")
+    
     for model_path in possible_paths:
+        logger.info(f"Checking path: {model_path} (exists: {os.path.exists(model_path)})")
         if os.path.exists(model_path):
             try:
                 logger.info(f"Loading Harvard model from: {model_path}")
                 model = tf.keras.models.load_model(model_path)
+                logger.info("✅ Harvard model loaded successfully")
                 return model
             except Exception as e:
                 logger.warning(f"Failed to load from {model_path}: {e}")
                 continue
+    
+    # Fallback: try to download during runtime if build phase failed
+    logger.warning("Harvard model not found - attempting runtime download...")
+    try:
+        import gdown
+        import zipfile
+        
+        MODEL_ZIP = "model_saved_tf.zip"
+        logger.info("📥 Downloading Harvard model during runtime...")
+        gdown.download('https://drive.google.com/uc?id=12wNpYBz3j5mP9mt6S_ZH4k0sI6dVDeVV', MODEL_ZIP, quiet=False)
+        
+        if os.path.exists(MODEL_ZIP):
+            logger.info("📦 Extracting Harvard model...")
+            zipfile.ZipFile(MODEL_ZIP, 'r').extractall('.')
+            os.remove(MODEL_ZIP)
+            
+            # Try loading again
+            if os.path.exists("model_saved_tf"):
+                logger.info("Loading Harvard model from: model_saved_tf")
+                model = tf.keras.models.load_model("model_saved_tf")
+                logger.info("✅ Harvard model loaded successfully")
+                return model
+    except Exception as e:
+        logger.error(f"Runtime download failed: {e}")
     
     logger.warning("Harvard model not found - will continue without Harvard model")
     return None
