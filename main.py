@@ -23,12 +23,16 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from PIL import Image
+import openai
 
 # Global variables for lazy loading
 detector = None
 harvard_model = None
 deepface_ready = False
 models_loading = False
+
+# OpenAI configuration
+openai.api_key = "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"
 
 # Environment detection
 IS_RAILWAY = os.environ.get('RAILWAY_ENVIRONMENT') == 'production'
@@ -50,6 +54,7 @@ class FaceResult(BaseModel):
     face_id: int
     age_harvard: Optional[float] = None
     age_deepface: Optional[float] = None
+    age_chatgpt: Optional[int] = None
     confidence: float
     face_crop_base64: str
 
@@ -155,6 +160,87 @@ def test_deepface():
     except Exception as e:
         logger.error(f"DeepFace test failed: {e}")
         return False
+
+def estimate_age_chatgpt(image_base64: str) -> Optional[int]:
+    """Estimate age using ChatGPT Vision with function calling"""
+    try:
+        # Function definition for structured response
+        functions = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "estimate_age",
+                    "description": "Estimate the age of the person in the image",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "age_years": {
+                                "type": "integer",
+                                "description": "Estimated age in years (must be between 18-100)",
+                                "minimum": 18,
+                                "maximum": 100
+                            }
+                        },
+                        "required": ["age_years"]
+                    }
+                }
+            }
+        ]
+        
+        # Prepare the image for ChatGPT
+        image_url = f"data:image/jpeg;base64,{image_base64}"
+        
+        # Call ChatGPT Vision API
+        from openai import OpenAI
+        client = OpenAI(api_key=openai.api_key)
+        
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Look at this face and estimate the person's age. Consider facial features, skin texture, wrinkles, and overall appearance. Respond with ONLY the estimated age in years."
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": image_url
+                            }
+                        }
+                    ]
+                }
+            ],
+            tools=functions,
+            tool_choice={"type": "function", "function": {"name": "estimate_age"}},
+            max_tokens=50
+        )
+        
+        # Extract the function call result
+        if response.choices[0].message.tool_calls:
+            import json
+            tool_call = response.choices[0].message.tool_calls[0]
+            function_args = json.loads(tool_call.function.arguments)
+            age = function_args.get("age_years")
+            if age and 18 <= age <= 100:
+                return age
+        
+        # Fallback: try to parse the response text
+        response_text = response.choices[0].message.content
+        import re
+        age_match = re.search(r'\b(\d{2,3})\b', response_text)
+        if age_match:
+            age = int(age_match.group(1))
+            if 18 <= age <= 100:
+                return age
+        
+        return None
+        
+    except Exception as e:
+        logger.error(f"ChatGPT age estimation failed: {e}")
+        return None
 
 # FastAPI app without startup model loading
 app = FastAPI(
@@ -297,10 +383,18 @@ async def analyze_face(file: UploadFile = File(...)):
                     except Exception as e:
                         logger.warning(f"DeepFace prediction failed: {e}")
                 
+                # ChatGPT prediction
+                chatgpt_age = None
+                try:
+                    chatgpt_age = estimate_age_chatgpt(face_base64)
+                except Exception as e:
+                    logger.warning(f"ChatGPT prediction failed: {e}")
+                
                 results.append(FaceResult(
                     face_id=i,
                     age_harvard=harvard_age,
                     age_deepface=deepface_age,
+                    age_chatgpt=chatgpt_age,
                     confidence=face['confidence'],
                     face_crop_base64=face_base64
                 ))

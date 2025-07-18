@@ -104,6 +104,7 @@ function AppContent() {
   const [infoVisible, setInfoVisible] = useState(false);
   const [harvardTooltipVisible, setHarvardTooltipVisible] = useState(false);
   const [deepfaceTooltipVisible, setDeepfaceTooltipVisible] = useState(false);
+  const [chatgptTooltipVisible, setChatgptTooltipVisible] = useState(false);
 
   // Request permissions on mount
   useEffect(() => {
@@ -636,7 +637,7 @@ function AppContent() {
             <Image 
               source={{ uri: selectedImage.uri }} 
               style={[styles.analyzingImage, { maxHeight: getResponsiveHeight() * 0.4, maxWidth: '100%' }]}
-              resizeMode="contain"
+              resizeMode="cover"
             />
             <View style={styles.scanOverlay}>
               <Animated.View style={[
@@ -776,6 +777,30 @@ function AppContent() {
                           </View>
                           {deepfaceTooltipVisible && (
                             <Text style={styles.tooltipText}>Most accurate for general face age estimation.</Text>
+                          )}
+                        </Layout>
+                      )}
+                      {face.age_chatgpt && (
+                        <Layout style={styles.ageResultCard}>
+                          <View style={styles.ageResultRow}>
+                            <View style={styles.modelInfoContainer}>
+                              <Text style={styles.targetIcon}>🧠</Text>
+                              <View style={{flexShrink: 1, minWidth: 0}}>
+                                <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                                  <Text style={styles.modelName} numberOfLines={1} ellipsizeMode="tail">ChatGPT Vision</Text>
+                                  <TouchableOpacity onPress={() => setChatgptTooltipVisible(!chatgptTooltipVisible)} style={styles.infoIconContainer}>
+                                    <InfoIcon style={styles.infoIcon} />
+                                  </TouchableOpacity>
+                                </View>
+                                <Text style={styles.modelSubtitle}>Best for human-like age perception</Text>
+                              </View>
+                            </View>
+                            <View style={styles.ageContainer}>
+                              <Text style={styles.ageValue}>{face.age_chatgpt} years</Text>
+                            </View>
+                          </View>
+                          {chatgptTooltipVisible && (
+                            <Text style={styles.tooltipText}>AI-powered age estimation using human-like perception and reasoning.</Text>
                           )}
                         </Layout>
                       )}
@@ -994,8 +1019,8 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   analyzingImage: {
-    width: width * 0.8,
-    height: width * 0.6,
+    width: width * 0.7,
+    height: width * 0.7,
     borderRadius: 20,
     overflow: 'hidden',
   },
