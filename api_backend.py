@@ -7,7 +7,7 @@ import cv2
 from PIL import Image, ImageDraw, ImageFont
 from mtcnn import MTCNN
 import tensorflow as tf
-import keras
+import tensorflow.keras as keras
 import zipfile
 import gdown
 from deepface import DeepFace

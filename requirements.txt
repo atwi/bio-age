@@ -4,8 +4,8 @@ uvicorn==0.24.0
 python-multipart==0.0.6
 
 # AI/ML Dependencies - Railway optimized
-tensorflow==2.13.0
-keras==2.13.1
+tensorflow==2.15.0
+# Remove separate keras package - it's included in tensorflow 2.15+
 deepface==0.0.93
 mtcnn==1.0.0
 

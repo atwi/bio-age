@@ -132,7 +132,6 @@ def lazy_load_models():
 def load_harvard_model():
     """Load Harvard model with enhanced error handling"""
     import tensorflow as tf
-    import keras
     
     # Try different possible paths
     possible_paths = [

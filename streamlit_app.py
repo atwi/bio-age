@@ -33,7 +33,7 @@ try:
     import tensorflow as tf
     tf.get_logger().setLevel('ERROR')
     
-    import keras
+    import tensorflow.keras as keras
     import zipfile
     import gdown
     import time

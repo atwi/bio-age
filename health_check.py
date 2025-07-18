@@ -28,7 +28,7 @@ packages = [
     ('matplotlib', 'import matplotlib'),
     ('mtcnn', 'from mtcnn import MTCNN'),
     ('tensorflow', 'import tensorflow as tf'),
-    ('keras', 'import keras'),
+    ('keras', 'import tensorflow.keras as keras'),
     ('deepface', 'from deepface import DeepFace'),
     ('gdown', 'import gdown'),
 ]
@@ -48,7 +48,7 @@ try:
     import cv2
     from mtcnn import MTCNN
     import tensorflow as tf
-    import keras
+    import tensorflow.keras as keras
     from deepface import DeepFace
     
     # Version check
