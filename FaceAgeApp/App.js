@@ -337,10 +337,17 @@ function AppContent() {
 
       console.log('Sending request to:', `${API_BASE_URL}/analyze-face`);
 
+      // Create AbortController for timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes timeout
+      
       const response = await fetch(`${API_BASE_URL}/analyze-face`, {
         method: 'POST',
         body: formData,
+        signal: controller.signal,
       });
+      
+      clearTimeout(timeoutId);
 
       console.log('Response status:', response.status);
 
@@ -349,8 +356,8 @@ function AppContent() {
         console.log('Analysis results:', data);
         setResults(data);
         
-        // Add minimum delay to show scanning animation
-        await new Promise(resolve => setTimeout(resolve, 6000));
+        // Add minimum delay to show scanning animation (reduced for Railway)
+        await new Promise(resolve => setTimeout(resolve, 2000));
         setCurrentStep(3); // Move to results step
       } else {
         const errorText = await response.text();
@@ -360,7 +367,17 @@ function AppContent() {
       }
     } catch (error) {
       console.error('Network error:', error);
-      Alert.alert('Error', `Network error: ${error.message}`);
+      let errorMessage = 'Network error occurred';
+      
+      if (error.name === 'AbortError') {
+        errorMessage = 'Request timed out. The server is taking too long to respond. Please try again.';
+      } else if (error.message.includes('Failed to fetch')) {
+        errorMessage = 'Unable to connect to the server. Please check your internet connection and try again.';
+      } else {
+        errorMessage = `Network error: ${error.message}`;
+      }
+      
+      Alert.alert('Error', errorMessage);
       setCurrentStep(1); // Go back to upload step
     } finally {
       setLoading(false);
