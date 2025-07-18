@@ -52,4 +52,9 @@ FaceAge/
 .deepface/
 
 # Streamlit
-.streamlit/secrets.toml 
+.streamlit/secrets.toml
+
+# Environment variables
+.env
+.env.local
+.env.*.local 
