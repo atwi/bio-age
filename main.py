@@ -24,6 +24,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from PIL import Image
 import openai
+from dotenv import load_dotenv
+import os
 
 # Global variables for lazy loading
 detector = None
@@ -31,8 +33,11 @@ harvard_model = None
 deepface_ready = False
 models_loading = False
 
+# Load environment variables
+load_dotenv()
+
 # OpenAI configuration
-openai.api_key = "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"
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 # Environment detection
 IS_RAILWAY = os.environ.get('RAILWAY_ENVIRONMENT') == 'production'
