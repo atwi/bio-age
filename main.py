@@ -122,7 +122,13 @@ def lazy_load_models():
             deepface_ready = True  # Mark as ready to skip loading
         
         models_loading = False
-        return detector is not None and (harvard_model is not None or not LOAD_HARVARD) and (deepface_ready or not ENABLE_DEEPFACE)
+        # Return True if we have at least the face detector and one age estimation model
+        has_face_detector = detector is not None
+        has_harvard = harvard_model is not None
+        has_deepface = deepface_ready or not ENABLE_DEEPFACE
+        
+        # We need face detector and at least one age estimation model
+        return has_face_detector and (has_harvard or has_deepface)
         
     except Exception as e:
         logger.error(f"❌ Model loading failed: {e}")
@@ -133,29 +139,61 @@ def download_harvard_model():
     """Download Harvard model if not exists"""
     import gdown
     import zipfile
+    import requests
     
     MODEL_DIR = "model_saved_tf"
     MODEL_ZIP = "model_saved_tf.zip"
-    GDRIVE_FILE_ID = "1-4PXalQehNn_XqKdIV1X22t0dilB5apC"  # Harvard model file ID
+    
+    # Try multiple download sources
+    download_sources = [
+        {
+            "name": "Google Drive (Direct)",
+            "url": "https://drive.google.com/uc?id=1-4PXalQehNn_XqKdIV1X22t0dilB5apC",
+            "method": "gdown"
+        },
+        {
+            "name": "Google Drive (Alternative)",
+            "url": "https://drive.google.com/file/d/1-4PXalQehNn_XqKdIV1X22t0dilB5apC/view?usp=sharing",
+            "method": "gdown_alt"
+        },
+        {
+            "name": "Direct Download (if available)",
+            "url": "https://github.com/atwi/bio-age/releases/download/v1.0/model_saved_tf.zip",
+            "method": "requests"
+        }
+    ]
     
     if not os.path.exists(MODEL_DIR):
-        try:
-            url = f"https://drive.google.com/uc?id={GDRIVE_FILE_ID}"
-            logger.info("📥 Downloading Harvard model from Google Drive...")
-            gdown.download(url, MODEL_ZIP, quiet=False)
-            
-            logger.info("📦 Extracting Harvard model...")
-            with zipfile.ZipFile(MODEL_ZIP, "r") as zip_ref:
-                zip_ref.extractall(".")
-            
-            if os.path.exists(MODEL_ZIP):
-                os.remove(MODEL_ZIP)
-            
-            logger.info("✅ Harvard model downloaded and extracted successfully")
-            return True
-        except Exception as e:
-            logger.error(f"❌ Harvard model download failed: {e}")
-            return False
+        for source in download_sources:
+            try:
+                logger.info(f"📥 Trying to download Harvard model from: {source['name']}")
+                
+                if source['method'] == "gdown":
+                    gdown.download(source['url'], MODEL_ZIP, quiet=False)
+                elif source['method'] == "gdown_alt":
+                    gdown.download(source['url'], MODEL_ZIP, quiet=False, fuzzy=True)
+                elif source['method'] == "requests":
+                    response = requests.get(source['url'], stream=True)
+                    response.raise_for_status()
+                    with open(MODEL_ZIP, 'wb') as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            f.write(chunk)
+                
+                if os.path.exists(MODEL_ZIP):
+                    logger.info("📦 Extracting Harvard model...")
+                    with zipfile.ZipFile(MODEL_ZIP, "r") as zip_ref:
+                        zip_ref.extractall(".")
+                    
+                    os.remove(MODEL_ZIP)
+                    logger.info("✅ Harvard model downloaded and extracted successfully")
+                    return True
+                    
+            except Exception as e:
+                logger.warning(f"❌ Failed to download from {source['name']}: {e}")
+                continue
+        
+        logger.error("❌ All download sources failed for Harvard model")
+        return False
     return True
 
 def load_harvard_model():
@@ -164,7 +202,7 @@ def load_harvard_model():
     
     # First try to download if not exists
     if not download_harvard_model():
-        logger.warning("Harvard model download failed")
+        logger.warning("Harvard model download failed - will continue without Harvard model")
         return None
     
     # Try different possible paths
@@ -185,7 +223,7 @@ def load_harvard_model():
                 logger.warning(f"Failed to load from {model_path}: {e}")
                 continue
     
-    logger.warning("Harvard model not found or failed to load")
+    logger.warning("Harvard model not found or failed to load - will continue without Harvard model")
     return None
 
 def test_deepface():
@@ -355,7 +393,20 @@ async def analyze_face(file: UploadFile = File(...)):
     try:
         # Lazy load models on first request
         if not lazy_load_models():
-            raise HTTPException(status_code=500, detail="Models failed to load")
+            # Check which models are available
+            available_models = []
+            if detector is not None:
+                available_models.append("face_detector")
+            if harvard_model is not None:
+                available_models.append("harvard_model")
+            if deepface_ready or not ENABLE_DEEPFACE:
+                available_models.append("deepface")
+            
+            if not available_models:
+                raise HTTPException(status_code=500, detail="No models available for face analysis")
+            else:
+                logger.warning(f"Limited models available: {available_models}")
+                # Continue with available models
         
         # Read and process image
         contents = await file.read()
