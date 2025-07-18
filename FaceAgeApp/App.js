@@ -768,7 +768,7 @@ function AppContent() {
                                     <InfoIcon style={styles.infoIcon} />
                                   </TouchableOpacity>
                                 </View>
-                                <Text style={styles.modelSubtitle}>Best for general face age estimation</Text>
+                                <Text style={styles.modelSubtitle}>Best for younger face age estimation</Text>
                               </View>
                             </View>
                             <View style={styles.ageContainer}>
