@@ -44,7 +44,7 @@ IS_RAILWAY = os.environ.get('RAILWAY_ENVIRONMENT') == 'production'
 LOAD_HARVARD = os.environ.get('LOAD_HARVARD_MODEL', 'true').lower() == 'true'
 ENABLE_DEEPFACE = os.environ.get('ENABLE_DEEPFACE', 'true').lower() == 'true'
 
-# Debug logging for environment variables (Railway debug - 2024-12-19)
+# Debug logging for environment variables - FORCE REDEPLOY 2024-12-19
 print(f"🔍 DEBUG: RAILWAY_ENVIRONMENT = {os.environ.get('RAILWAY_ENVIRONMENT', 'NOT_SET')}")
 print(f"🔍 DEBUG: ENABLE_DEEPFACE env var = {os.environ.get('ENABLE_DEEPFACE', 'NOT_SET')}")
 print(f"🔍 DEBUG: ENABLE_DEEPFACE parsed = {ENABLE_DEEPFACE}")
