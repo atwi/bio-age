@@ -35,7 +35,16 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-4. Run the application:
+4. Set up environment variables:
+```bash
+# Copy the example environment file
+cp .env.example .env
+
+# Edit .env and add your OpenAI API key
+# OPENAI_API_KEY=your_openai_api_key_here
+```
+
+5. Run the application:
 ```bash
 streamlit run streamlit_app.py
 ```
@@ -54,6 +63,7 @@ This app is optimized for Streamlit Cloud deployment:
 
 - **Harvard FaceAge**: Research-grade model for precise age estimation
 - **DeepFace**: Industry-standard model with robust performance
+- **ChatGPT Vision**: AI-powered human-like age perception
 - **MTCNN**: Face detection and alignment
 
 ### Technology Stack
