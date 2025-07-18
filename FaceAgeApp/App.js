@@ -627,7 +627,7 @@ function AppContent() {
       <Layout style={styles.headerContainer}>
         <Text category='h4' style={styles.stepTitle}>🔍 Analyzing Photo</Text>
         <Text category='s1' style={styles.stepSubtitle}>
-          Please wait while we analyze your photo...
+          Please wait while our models analyze your photo...
         </Text>
       </Layout>
 
