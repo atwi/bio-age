@@ -129,16 +129,50 @@ def lazy_load_models():
         models_loading = False
         return False
 
+def download_harvard_model():
+    """Download Harvard model if not exists"""
+    import gdown
+    import zipfile
+    
+    MODEL_DIR = "model_saved_tf"
+    MODEL_ZIP = "model_saved_tf.zip"
+    GDRIVE_FILE_ID = "1-4PXalQehNn_XqKdIV1X22t0dilB5apC"  # Harvard model file ID
+    
+    if not os.path.exists(MODEL_DIR):
+        try:
+            url = f"https://drive.google.com/uc?id={GDRIVE_FILE_ID}"
+            logger.info("📥 Downloading Harvard model from Google Drive...")
+            gdown.download(url, MODEL_ZIP, quiet=False)
+            
+            logger.info("📦 Extracting Harvard model...")
+            with zipfile.ZipFile(MODEL_ZIP, "r") as zip_ref:
+                zip_ref.extractall(".")
+            
+            if os.path.exists(MODEL_ZIP):
+                os.remove(MODEL_ZIP)
+            
+            logger.info("✅ Harvard model downloaded and extracted successfully")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Harvard model download failed: {e}")
+            return False
+    return True
+
 def load_harvard_model():
     """Load Harvard model with enhanced error handling"""
     import tensorflow as tf
     
+    # First try to download if not exists
+    if not download_harvard_model():
+        logger.warning("Harvard model download failed")
+        return None
+    
     # Try different possible paths
     possible_paths = [
-        "FaceAge/models/model_saved_tf",
-        "./FaceAge/models/model_saved_tf",
         "model_saved_tf",
-        "./model_saved_tf"
+        "./model_saved_tf",
+        "FaceAge/models/model_saved_tf",
+        "./FaceAge/models/model_saved_tf"
     ]
     
     for model_path in possible_paths:

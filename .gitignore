@@ -41,6 +41,7 @@ ENV/
 Thumbs.db
 
 # Model files (these will be downloaded)
+model_saved_tf/
 model_saved_tf.zip
 temp_face_*.jpg
 
