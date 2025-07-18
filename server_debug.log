@@ -221,3 +221,61 @@ INFO:     127.0.0.1:57037 - "POST /api/analyze-face HTTP/1.1" 200 OK
   Current state: detector=True, harvard_model=True, deepface_ready=True
 🐛 DEBUG: Models already loaded, returning True
 INFO:     127.0.0.1:57055 - "POST /api/analyze-face HTTP/1.1" 200 OK
+🐛 DEBUG: API health check called
+  Current state: detector=True, harvard_model=True, deepface_ready=True
+INFO:     192.168.96.112:50958 - "GET /api/health HTTP/1.1" 200 OK
+🐛 DEBUG: analyze_face endpoint called - this should trigger model loading!
+🐛 DEBUG: lazy_load_models() called!
+  Current state: detector=True, harvard_model=True, deepface_ready=True
+🐛 DEBUG: Models already loaded, returning True
+INFO:     192.168.96.112:50958 - "POST /api/analyze-face HTTP/1.1" 200 OK
+🐛 DEBUG: analyze_face endpoint called - this should trigger model loading!
+🐛 DEBUG: lazy_load_models() called!
+  Current state: detector=True, harvard_model=True, deepface_ready=True
+🐛 DEBUG: Models already loaded, returning True
+INFO:     192.168.96.112:50963 - "POST /api/analyze-face HTTP/1.1" 200 OK
+🐛 DEBUG: API health check called
+  Current state: detector=True, harvard_model=True, deepface_ready=True
+INFO:     192.168.96.112:50971 - "GET /api/health HTTP/1.1" 200 OK
+🐛 DEBUG: API health check called
+  Current state: detector=True, harvard_model=True, deepface_ready=True
+INFO:     127.0.0.1:57542 - "GET /api/health HTTP/1.1" 200 OK
+🐛 DEBUG: API health check called
+  Current state: detector=True, harvard_model=True, deepface_ready=True
+INFO:     127.0.0.1:57565 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58046 - "OPTIONS /api/health HTTP/1.1" 200 OK
+🐛 DEBUG: API health check called
+  Current state: detector=True, harvard_model=True, deepface_ready=True
+INFO:     127.0.0.1:58046 - "GET /api/health HTTP/1.1" 200 OK
+🐛 DEBUG: analyze_face endpoint called - this should trigger model loading!
+🐛 DEBUG: lazy_load_models() called!
+  Current state: detector=True, harvard_model=True, deepface_ready=True
+🐛 DEBUG: Models already loaded, returning True
+INFO:     127.0.0.1:58046 - "POST /api/analyze-face HTTP/1.1" 200 OK
+🐛 DEBUG: Root endpoint called
+INFO:     127.0.0.1:58288 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58288 - "GET /_expo/static/js/web/index-22b6809d8017971d3033325fe4315670.js HTTP/1.1" 304 Not Modified
+🐛 DEBUG: API health check called
+  Current state: detector=True, harvard_model=True, deepface_ready=True
+INFO:     127.0.0.1:58288 - "GET /api/health HTTP/1.1" 200 OK
+🐛 DEBUG: analyze_face endpoint called - this should trigger model loading!
+🐛 DEBUG: lazy_load_models() called!
+  Current state: detector=True, harvard_model=True, deepface_ready=True
+🐛 DEBUG: Models already loaded, returning True
+INFO:     127.0.0.1:58288 - "POST /api/analyze-face HTTP/1.1" 200 OK
+🐛 DEBUG: Health check endpoint called
+INFO:     127.0.0.1:58481 - "GET /health HTTP/1.1" 200 OK
+🐛 DEBUG: API health check called
+  Current state: detector=True, harvard_model=True, deepface_ready=True
+INFO:     127.0.0.1:58483 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58495 - "HEAD / HTTP/1.1" 200 OK
+🐛 DEBUG: Root endpoint called
+INFO:     127.0.0.1:58511 - "GET / HTTP/1.1" 200 OK
+🐛 DEBUG: API health check called
+  Current state: detector=True, harvard_model=True, deepface_ready=True
+INFO:     127.0.0.1:58511 - "GET /api/health HTTP/1.1" 200 OK
+🐛 DEBUG: analyze_face endpoint called - this should trigger model loading!
+🐛 DEBUG: lazy_load_models() called!
+  Current state: detector=True, harvard_model=True, deepface_ready=True
+🐛 DEBUG: Models already loaded, returning True
+INFO:     127.0.0.1:58511 - "POST /api/analyze-face HTTP/1.1" 200 OK

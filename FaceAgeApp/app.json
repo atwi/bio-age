@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "FaceAgeApp",
-    "slug": "FaceAgeApp",
+    "name": "FaceAge",
+    "slug": "FaceAge",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -13,6 +13,11 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
+      "infoPlist": {
+        "NSCameraUsageDescription": "This app needs access to your camera to take photos.",
+        "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to select photos.",
+        "NSPhotoLibraryAddUsageDescription": "This app needs access to save photos to your library."
+      },
       "supportsTablet": true
     },
     "android": {

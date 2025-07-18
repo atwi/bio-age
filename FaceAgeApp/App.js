@@ -10,10 +10,13 @@ import {
   SafeAreaView,
   Animated,
   View,
+  Share,
+  TouchableOpacity,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
+import * as Sharing from 'expo-sharing';
 import { Ionicons } from '@expo/vector-icons';
 
 // UI Kitten imports
@@ -30,6 +33,7 @@ import {
   Icon,
   Spinner,
   IconRegistry,
+  Modal,
 } from '@ui-kitten/components';
 
 const { width, height } = Dimensions.get('window');
@@ -41,14 +45,14 @@ const getApiBaseUrl = () => {
     // Web environment
     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
       // Local development - use /api prefix for unified deployment
-      return 'http://localhost:8000/api';
+      return 'http://localhost:8001/api';
     } else {
       // Production - use relative URLs since API is served from same domain
       return '/api';
     }
   } else {
     // React Native mobile environment
-    return 'http://192.168.96.130:8000/api';
+    return 'http://192.168.96.130:8001/api';
   }
 };
 
@@ -75,6 +79,14 @@ const ArrowBackIcon = (props) => (
   <Icon {...props} name='arrow-back-outline'/>
 );
 
+const ShareIcon = (props) => (
+  <Icon {...props} name='share-outline'/>
+);
+
+const InfoIcon = (props) => (
+  <Icon {...props} name='info-outline'/>
+);
+
 function AppContent() {
   const [currentStep, setCurrentStep] = useState(1); // 1: Upload, 2: Analyzing, 3: Results
   const [selectedImage, setSelectedImage] = useState(null);
@@ -89,6 +101,22 @@ function AppContent() {
   // Animated values for scanning effect
   const scanLinePosition = useRef(new Animated.Value(0)).current;
   const scanLineOpacity = useRef(new Animated.Value(0.3)).current;
+  const [infoVisible, setInfoVisible] = useState(false);
+  const [harvardTooltipVisible, setHarvardTooltipVisible] = useState(false);
+  const [deepfaceTooltipVisible, setDeepfaceTooltipVisible] = useState(false);
+
+  // Request permissions on mount
+  useEffect(() => {
+    (async () => {
+      if (Platform.OS !== 'web') {
+        const cameraPerm = await ImagePicker.requestCameraPermissionsAsync();
+        const mediaPerm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (cameraPerm.status !== 'granted' || mediaPerm.status !== 'granted') {
+          Alert.alert('Permissions Required', 'Camera and photo library permissions are required to use this app.');
+        }
+      }
+    })();
+  }, []);
 
   // Check API health
   useEffect(() => {
@@ -321,7 +349,7 @@ function AppContent() {
         setResults(data);
         
         // Add minimum delay to show scanning animation
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise(resolve => setTimeout(resolve, 6000));
         setCurrentStep(3); // Move to results step
       } else {
         const errorText = await response.text();
@@ -343,6 +371,97 @@ function AppContent() {
     setResults(null);
     setCurrentStep(1);
     closeWebCamera();
+  };
+
+  const shareResults = async () => {
+    if (!results || !results.faces || results.faces.length === 0) {
+      Alert.alert('Error', 'No results to share');
+      return;
+    }
+
+    const shareText = generateShareText();
+
+    try {
+      if (Platform.OS === 'ios' || Platform.OS === 'android') {
+        // Use React Native's Share API for mobile platforms
+        await Share.share({
+          message: shareText,
+          title: 'My Age Analysis Results',
+        });
+      } else if (Platform.OS === 'web' && navigator.share) {
+        // Web Share API is available
+        await navigator.share({
+          title: 'My Age Analysis Results',
+          text: shareText,
+        });
+      } else if (Platform.OS === 'web' && navigator.clipboard) {
+        // Fallback to clipboard on web
+        await navigator.clipboard.writeText(shareText);
+        Alert.alert('Copied!', 'Results copied to clipboard. You can now paste them anywhere!');
+      } else {
+        // Final fallback - show alert with copy option
+        Alert.alert('Share Results', shareText, [
+          { text: 'Copy to Clipboard', onPress: () => copyToClipboard(shareText) },
+          { text: 'Cancel', style: 'cancel' }
+        ]);
+      }
+    } catch (error) {
+      console.error('Share error:', error);
+      // Fallback to clipboard copy
+      try {
+        await copyToClipboard(shareText);
+        Alert.alert('Copied!', 'Results copied to clipboard since sharing failed.');
+      } catch (clipboardError) {
+        Alert.alert('Share Results', shareText, [
+          { text: 'OK', style: 'default' }
+        ]);
+      }
+    }
+  };
+
+  const generateShareText = () => {
+    if (!results || !results.faces) return '';
+    
+    const validFaces = results.faces.filter(face => face.confidence >= 0.9);
+    if (validFaces.length === 0) return 'No clear faces detected in the analysis.';
+
+    let shareText = '🎯 My Age Analysis Results:\n\n';
+    
+    validFaces.forEach((face, index) => {
+      shareText += `Face ${index + 1}:\n`;
+      if (face.age_harvard) {
+        shareText += `🎯 Harvard Model: ${face.age_harvard.toFixed(1)} years\n`;
+      }
+      if (face.age_deepface) {
+        shareText += `🤖 DeepFace Model: ${face.age_deepface.toFixed(1)} years\n`;
+      }
+      shareText += `📊 Confidence: ${(face.confidence * 100).toFixed(1)}%\n\n`;
+    });
+
+    shareText += 'Try the Bio Age Estimator app yourself! 📱';
+    return shareText;
+  };
+
+  const copyToClipboard = async (text) => {
+    try {
+      if (Platform.OS === 'web') {
+        await navigator.clipboard.writeText(text);
+      } else {
+        // For mobile, we could use expo-clipboard if needed
+        console.log('Clipboard text:', text);
+      }
+      Alert.alert('Copied!', 'Results copied to clipboard!');
+    } catch (error) {
+      console.error('Clipboard error:', error);
+      Alert.alert('Copy Failed', 'Unable to copy to clipboard');
+    }
+  };
+
+  const getResponsiveHeight = () => {
+    if (typeof window !== 'undefined' && window.innerHeight) {
+      return window.innerHeight;
+    }
+    return height;
   };
 
   // Web camera view for browsers
@@ -387,17 +506,102 @@ function AppContent() {
     );
   }
 
+  const renderInfoModal = () => {
+    const content = (
+      <Layout style={styles.infoModalCard}>
+        <TouchableOpacity
+          style={styles.closeIconContainer}
+          onPress={() => setInfoVisible(false)}
+          activeOpacity={0.7}
+        >
+          <Icon name="close" fill="#888" style={styles.closeIcon} />
+        </TouchableOpacity>
+        <Text category="s1" style={{ marginBottom: 8, marginTop: 8 }}>
+          💡 What is Facial Age Estimation?
+        </Text>
+        <Text appearance="hint" style={{ marginBottom: 12 }}>
+          This app uses deep learning models to estimate your biological age based on facial features.
+        </Text>
+        <Text>
+          🧬 <Text style={{ fontWeight: 'bold' }}>Harvard Model</Text> – tuned for older faces
+        </Text>
+        <Text>
+          🤖 <Text style={{ fontWeight: 'bold' }}>DeepFace</Text> – general-purpose AI face analysis
+        </Text>
+        <Text>
+          🎯 <Text style={{ fontWeight: 'bold' }}>MTCNN</Text> – fast & accurate face detection
+        </Text>
+      </Layout>
+    );
+    if (Platform.OS === 'web') {
+      return infoVisible ? (
+        <View style={styles.webModalOverlay}>
+          {content}
+        </View>
+      ) : null;
+    } else {
+      return (
+        <Modal
+          visible={infoVisible}
+          backdropStyle={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+          onBackdropPress={() => setInfoVisible(false)}
+        >
+          {content}
+        </Modal>
+      );
+    }
+  };
+
   // Step 1: Upload or Take Photo
   const renderStep1 = () => (
     <Layout style={styles.stepContainer}>
-      <Layout style={styles.headerContainer}>
-        <Text category='h4' style={styles.stepTitle}>📸 Upload or Take Photo</Text>
-        <Text category='s1' style={styles.stepSubtitle}>
-          Choose a clear photo with visible face(s)
-        </Text>
-      </Layout>
-
       <Layout style={styles.contentContainer}>
+        <View style={styles.mainContentContainer}>
+          <Layout style={styles.headerContainer}>
+            <Text category='h4' style={styles.stepTitle}>📸 Upload or Take A Photo</Text>
+            <Text category='s1' style={styles.stepSubtitle}>
+              Choose a clear photo with visible face(s)
+            </Text>
+          </Layout>
+
+          <View style={styles.demoImageContainer}>
+            <Image 
+              source={require('./assets/demoimage.png')} 
+              style={styles.demoImage}
+              resizeMode="contain"
+            />
+          </View>
+
+          <Layout style={styles.buttonContainer}>
+            <Button
+              style={styles.primaryButton}
+              onPress={takePhoto}
+              accessoryLeft={CameraIcon}
+              size='large'
+            >
+              Take A Photo
+            </Button>
+            
+            <Button
+              style={styles.secondaryButton}
+              onPress={pickImage}
+              accessoryLeft={ImageIcon}
+              size='large'
+              status='basic'
+            >
+              Choose From Gallery
+            </Button>
+          </Layout>
+
+          <Text style={{ textAlign: 'center', marginTop: 15, marginBottom: 10 }}>
+            <TouchableOpacity onPress={() => setInfoVisible(true)} activeOpacity={0.7}>
+              <Text style={{ color: '#3366FF' }}>
+                💡 Learn how this works →
+              </Text>
+            </TouchableOpacity>
+          </Text>
+        </View>
+
         <Layout style={styles.apiStatusContainer}>
           {apiHealth ? (
             <Text category='c1' style={[
@@ -411,33 +615,14 @@ function AppContent() {
           )}
         </Layout>
 
-        <Layout style={styles.buttonContainer}>
-          <Button
-            style={styles.primaryButton}
-            onPress={takePhoto}
-            accessoryLeft={CameraIcon}
-            size='large'
-          >
-            Take A Photo
-          </Button>
-          
-          <Button
-            style={styles.secondaryButton}
-            onPress={pickImage}
-            accessoryLeft={ImageIcon}
-            size='large'
-            status='basic'
-          >
-            Choose From Gallery
-          </Button>
-        </Layout>
+        {renderInfoModal()}
       </Layout>
     </Layout>
   );
 
   // Step 2: Analyzing Photo
   const renderStep2 = () => (
-    <Layout style={styles.stepContainer}>
+    <Layout style={[styles.stepContainer, { minHeight: getResponsiveHeight(), maxHeight: getResponsiveHeight(), justifyContent: 'center' }]}> 
       <Layout style={styles.headerContainer}>
         <Text category='h4' style={styles.stepTitle}>🔍 Analyzing Photo</Text>
         <Text category='s1' style={styles.stepSubtitle}>
@@ -445,12 +630,12 @@ function AppContent() {
         </Text>
       </Layout>
 
-      <Layout style={styles.contentContainer}>
+      <Layout style={[styles.contentContainer, { minHeight: 0, maxHeight: getResponsiveHeight() * 0.7, justifyContent: 'center' }]}> 
         {selectedImage && (
           <Layout style={styles.analyzingImageContainer}>
             <Image 
               source={{ uri: selectedImage.uri }} 
-              style={styles.analyzingImage}
+              style={[styles.analyzingImage, { maxHeight: getResponsiveHeight() * 0.4, maxWidth: '100%' }]}
               resizeMode="contain"
             />
             <View style={styles.scanOverlay}>
@@ -466,8 +651,6 @@ function AppContent() {
                   }]
                 }
               ]} />
-              
-              {/* Corner brackets for scanning effect */}
               <View style={styles.scanCornerTopLeft} />
               <View style={styles.scanCornerTopRight} />
               <View style={styles.scanCornerBottomLeft} />
@@ -492,86 +675,172 @@ function AppContent() {
   // Step 3: Show Results
   const renderStep3 = () => (
     <Layout style={styles.stepContainer}>
-      <Layout style={styles.headerContainer}>
-        <Text category='h4' style={styles.stepTitle}>🎯 Analysis Results</Text>
-        <Text category='s1' style={styles.stepSubtitle}>
-          Age estimation complete
-        </Text>
-      </Layout>
-
       <ScrollView style={styles.resultsScrollView}>
+        <Layout style={styles.headerContainer}>
+          <Text category='h4' style={styles.stepTitle}>🎯 Analysis Results</Text>
+          <Text category='s1' style={styles.stepSubtitle}>
+            Age estimation complete
+          </Text>
+        </Layout>
         {results && results.faces && results.faces.filter(face => face.confidence >= 0.9).length > 0 ? (
-          results.faces.filter(face => face.confidence >= 0.9).map((face, index) => (
-            <Card key={index} style={styles.resultCard}>
-              <Layout style={styles.resultHeader}>
-                <Text category='h6' style={styles.resultTitle}>
-                  Face {index + 1}
-                </Text>
-                <Text category='c1' style={styles.confidenceText}>
-                  {(face.confidence * 100).toFixed(1)}% confidence
-                </Text>
-              </Layout>
-              
-              <Layout style={styles.resultContent}>
-                {/* Face crop image */}
-                {face.face_crop_base64 && (
-                  <Layout style={styles.faceCropContainer}>
-                    <Image
-                      source={{ uri: `data:image/jpeg;base64,${face.face_crop_base64}` }}
-                      style={styles.faceCropImage}
-                      resizeMode="cover"
-                    />
+          results.faces.filter(face => face.confidence >= 0.9).map((face, index) => {
+            const filteredFaces = results.faces.filter(face => face.confidence >= 0.9);
+            const isSingleFace = filteredFaces.length === 1;
+            
+            return (
+              <Card key={index} style={[styles.resultCard, isSingleFace && styles.singleFaceCard]}>
+                {!isSingleFace && (
+                  <Layout style={styles.resultHeader}>
+                    <Text category='h6' style={styles.resultTitle}>
+                      Face {index + 1}
+                    </Text>
+                    <Text category='c1' style={styles.confidenceText}>
+                      {(face.confidence * 100).toFixed(1)}% confidence
+                    </Text>
                   </Layout>
                 )}
                 
-                <Layout style={styles.ageResultsContainer}>
-                  {face.age_harvard && (
-                    <Layout style={styles.ageResult}>
-                      <Text category='label' style={styles.ageLabel}>🎯 Harvard Age</Text>
-                      <Text category='h5' style={styles.ageValue}>
-                        {face.age_harvard.toFixed(1)} years
-                      </Text>
+                <Layout style={[styles.resultContent, isSingleFace && styles.singleFaceContent]}>
+                {/* Face Analysis Grid */}
+                <Layout style={styles.analysisGrid}>
+                  {/* Face Detection Area */}
+                  <Layout style={styles.faceDetectionArea}>
+                    {!isSingleFace && (
+                      <Text category='label' style={styles.sectionTitle}>FACE DETECTION</Text>
+                    )}
+                    {face.face_crop_base64 && (
+                      <Layout style={styles.faceCropContainer}>
+                        <Image
+                          source={{ uri: `data:image/jpeg;base64,${face.face_crop_base64}` }}
+                          style={styles.faceCropImage}
+                          resizeMode="cover"
+                        />
+                        <View style={styles.faceOverlay}>
+                          <View style={styles.detectionIndicator}>
+                            <Text style={styles.detectionIcon}>✓</Text>
+                          </View>
+                        </View>
+                      </Layout>
+                    )}
+                    <Text category='c1' style={styles.detectionStatus}>
+                      ✓ MTCNN Detection Successful
+                    </Text>
+                  </Layout>
+
+                  {/* Age Estimation Results */}
+                  <Layout style={styles.ageEstimationArea}>
+                    <Text category='label' style={styles.sectionTitle}>AGE ESTIMATION</Text>
+                    <Layout style={styles.ageResultsContainer}>
+                      {face.age_harvard && (
+                        <Layout style={styles.ageResultCard}>
+                          <View style={styles.ageResultRow}>
+                            <View style={styles.modelInfoContainer}>
+                              <Text style={styles.targetIcon}>🎯</Text>
+                              <View style={{flexShrink: 1, minWidth: 0}}>
+                                <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                                  <Text style={styles.modelName} numberOfLines={1} ellipsizeMode="tail">Harvard Model</Text>
+                                  <TouchableOpacity onPress={() => setHarvardTooltipVisible(!harvardTooltipVisible)} style={styles.infoIconContainer}>
+                                    <InfoIcon style={styles.infoIcon} />
+                                  </TouchableOpacity>
+                                </View>
+                                <Text style={styles.modelSubtitle}>Best for clinical/biological age estimation</Text>
+                              </View>
+                            </View>
+                            <View style={styles.ageContainer}>
+                              <Text style={styles.ageValue}>{face.age_harvard.toFixed(1)} years</Text>
+                            </View>
+                          </View>
+                          {harvardTooltipVisible && (
+                            <Text style={styles.tooltipText}>Most accurate for clinical/biological age estimation.</Text>
+                          )}
+                        </Layout>
+                      )}
+                      {face.age_deepface && (
+                        <Layout style={styles.ageResultCard}>
+                          <View style={styles.ageResultRow}>
+                            <View style={styles.modelInfoContainer}>
+                              <Text style={styles.targetIcon}>🤖</Text>
+                              <View style={{flexShrink: 1, minWidth: 0}}>
+                                <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                                  <Text style={styles.modelName} numberOfLines={1} ellipsizeMode="tail">DeepFace Model</Text>
+                                  <TouchableOpacity onPress={() => setDeepfaceTooltipVisible(!deepfaceTooltipVisible)} style={styles.infoIconContainer}>
+                                    <InfoIcon style={styles.infoIcon} />
+                                  </TouchableOpacity>
+                                </View>
+                                <Text style={styles.modelSubtitle}>Best for general face age estimation</Text>
+                              </View>
+                            </View>
+                            <View style={styles.ageContainer}>
+                              <Text style={styles.ageValue}>{face.age_deepface.toFixed(1)} years</Text>
+                            </View>
+                          </View>
+                          {deepfaceTooltipVisible && (
+                            <Text style={styles.tooltipText}>Most accurate for general face age estimation.</Text>
+                          )}
+                        </Layout>
+                      )}
                     </Layout>
-                  )}
-                  
-                  {face.age_deepface && (
-                    <Layout style={styles.ageResult}>
-                      <Text category='label' style={styles.ageLabel}>🤖 DeepFace Age</Text>
-                      <Text category='h5' style={styles.ageValue}>
-                        {face.age_deepface.toFixed(1)} years
-                      </Text>
-                    </Layout>
-                  )}
+                  </Layout>
                 </Layout>
-                
-                {/* Age Category */}
-                <Layout style={styles.categoryContainer}>
-                  {(() => {
-                    const primaryAge = face.age_harvard || face.age_deepface;
-                    if (primaryAge < 30) {
-                      return (
-                        <Text category='h6' style={[styles.categoryText, styles.youngText]}>
-                          😊 Young
-                        </Text>
-                      );
-                    } else if (primaryAge < 50) {
-                      return (
-                        <Text category='h6' style={[styles.categoryText, styles.adultText]}>
-                          😐 Adult
-                        </Text>
-                      );
-                    } else {
-                      return (
-                        <Text category='h6' style={[styles.categoryText, styles.seniorText]}>
-                          👴 Senior
-                        </Text>
-                      );
-                    }
-                  })()}
+
+                {/* Analysis Summary */}
+                <Layout style={styles.analysisSummary}>
+                  <Text category='label' style={styles.summaryTitle}>ANALYSIS SUMMARY</Text>
+                  <Layout style={styles.summaryContent}>
+                    {(() => {
+                      const primaryAge = face.age_harvard || face.age_deepface;
+                      const modelUsed = face.age_harvard ? 'Harvard Clinical Model' : 'DeepFace General Model';
+                      
+                      if (primaryAge < 30) {
+                        return (
+                          <Layout style={styles.summaryCard}>
+                            <Text category='h6' style={styles.summaryAge}>
+                              {primaryAge.toFixed(1)} years
+                            </Text>
+                            <Text category='c1' style={styles.summaryCategory}>
+                              YOUNG ADULT • {modelUsed}
+                            </Text>
+                            <View style={styles.ageIndicator}>
+                              <View style={[styles.ageBar, { width: `${(primaryAge / 100) * 100}%` }]} />
+                            </View>
+                          </Layout>
+                        );
+                      } else if (primaryAge < 50) {
+                        return (
+                          <Layout style={styles.summaryCard}>
+                            <Text category='h6' style={styles.summaryAge}>
+                              {primaryAge.toFixed(1)} years
+                            </Text>
+                            <Text category='c1' style={styles.summaryCategory}>
+                              MIDDLE ADULT • {modelUsed}
+                            </Text>
+                            <View style={styles.ageIndicator}>
+                              <View style={[styles.ageBar, { width: `${(primaryAge / 100) * 100}%` }]} />
+                            </View>
+                          </Layout>
+                        );
+                      } else {
+                        return (
+                          <Layout style={styles.summaryCard}>
+                            <Text category='h6' style={styles.summaryAge}>
+                              {primaryAge.toFixed(1)} years
+                            </Text>
+                            <Text category='c1' style={styles.summaryCategory}>
+                              SENIOR ADULT • {modelUsed}
+                            </Text>
+                            <View style={styles.ageIndicator}>
+                              <View style={[styles.ageBar, { width: `${(primaryAge / 100) * 100}%` }]} />
+                            </View>
+                          </Layout>
+                        );
+                      }
+                    })()}
+                  </Layout>
                 </Layout>
               </Layout>
             </Card>
-          ))
+          );
+          })
         ) : (
           <Card style={styles.noResultsCard}>
             <Text category='h6' style={styles.noResultsText}>
@@ -589,6 +858,15 @@ function AppContent() {
 
       <Layout style={styles.resultsActions}>
         <Button
+          style={styles.shareButton}
+          onPress={shareResults}
+          accessoryLeft={ShareIcon}
+          status='primary'
+        >
+          Share Results
+        </Button>
+        
+        <Button
           style={styles.secondaryButton}
           onPress={() => setCurrentStep(1)}
           accessoryLeft={ArrowBackIcon}
@@ -596,21 +874,13 @@ function AppContent() {
         >
           Try Another Photo
         </Button>
-        
-        <Button
-          style={styles.primaryButton}
-          onPress={resetApp}
-          accessoryLeft={RefreshIcon}
-        >
-          Start Over
-        </Button>
       </Layout>
     </Layout>
   );
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar style="auto" />
+      <StatusBar style="auto" backgroundColor="#ffffff" barStyle="dark-content" />
       <Layout style={styles.fullScreen}>
         {currentStep === 1 && renderStep1()}
         {currentStep === 2 && renderStep2()}
@@ -634,40 +904,54 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#ffffff', // pure white to match iPhone
   },
   fullScreen: {
     flex: 1,
+    backgroundColor: '#ffffff',
   },
   stepContainer: {
     flex: 1,
     padding: 20,
+    backgroundColor: '#ffffff',
   },
   headerContainer: {
     alignItems: 'center',
-    marginBottom: 30,
-    paddingTop: 20,
+    marginBottom: 15,
+    paddingTop: 10,
   },
   stepTitle: {
-    textAlign: 'center',
-    marginBottom: 10,
+    fontSize: 28,
     fontWeight: 'bold',
+    color: '#1a2a3a',
+    textAlign: 'center',
+    marginTop: 16,
+    marginBottom: 4,
   },
   stepSubtitle: {
+    fontSize: 16,
+    color: '#7a869a',
     textAlign: 'center',
-    opacity: 0.7,
+    marginBottom: 12,
   },
   contentContainer: {
     flex: 1,
     justifyContent: 'center',
+    paddingTop: 20,
+    paddingBottom: 20,
+  },
+  mainContentContainer: {
+    alignItems: 'center',
+    marginBottom: 20,
   },
   apiStatusContainer: {
     alignItems: 'center',
-    marginBottom: 30,
+    marginBottom: 10,
+    marginTop: 5,
   },
   apiStatus: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: 'normal',
   },
   apiConnected: {
     color: '#4CAF50',
@@ -675,16 +959,34 @@ const styles = StyleSheet.create({
   apiDisconnected: {
     color: '#f44336',
   },
+  demoImageContainer: {
+    alignItems: 'center',
+    marginBottom: 25,
+  },
+  demoImage: {
+    width: Math.min(width * 0.85, 400),
+    height: Math.min(width * 0.53, 400),
+    borderRadius: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+  },
   buttonContainer: {
     gap: 20,
+    marginBottom: 20,
   },
   primaryButton: {
     borderRadius: 25,
     paddingVertical: 15,
   },
   secondaryButton: {
-    borderRadius: 25,
-    paddingVertical: 15,
+    backgroundColor: '#f6f8fa',
+    borderRadius: 24,
+    borderWidth: 0,
+    marginBottom: 10,
+    paddingVertical: 14,
   },
   analyzingImageContainer: {
     alignItems: 'center',
@@ -694,7 +996,8 @@ const styles = StyleSheet.create({
   analyzingImage: {
     width: width * 0.8,
     height: width * 0.6,
-    borderRadius: 15,
+    borderRadius: 20,
+    overflow: 'hidden',
   },
   scanOverlay: {
     position: 'absolute',
@@ -709,53 +1012,53 @@ const styles = StyleSheet.create({
   scanLine: {
     width: '85%',
     height: 4,
-    backgroundColor: '#00E676',
+    backgroundColor: '#3366FF',
     borderRadius: 2,
-    shadowColor: '#00E676',
+    shadowColor: '#3366FF',
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
+    shadowOpacity: 0.6,
     shadowRadius: 8,
     elevation: 5,
   },
   scanCornerTopLeft: {
     position: 'absolute',
-    top: 10,
-    left: 10,
-    width: 20,
-    height: 20,
+    top: 15,
+    left: 15,
+    width: 25,
+    height: 25,
     borderTopWidth: 3,
     borderLeftWidth: 3,
-    borderColor: '#00E676',
+    borderColor: '#3366FF',
   },
   scanCornerTopRight: {
     position: 'absolute',
-    top: 10,
-    right: 10,
-    width: 20,
-    height: 20,
+    top: 15,
+    right: 15,
+    width: 25,
+    height: 25,
     borderTopWidth: 3,
     borderRightWidth: 3,
-    borderColor: '#00E676',
+    borderColor: '#3366FF',
   },
   scanCornerBottomLeft: {
     position: 'absolute',
-    bottom: 10,
-    left: 10,
-    width: 20,
-    height: 20,
+    bottom: 15,
+    left: 15,
+    width: 25,
+    height: 25,
     borderBottomWidth: 3,
     borderLeftWidth: 3,
-    borderColor: '#00E676',
+    borderColor: '#3366FF',
   },
   scanCornerBottomRight: {
     position: 'absolute',
-    bottom: 10,
-    right: 10,
-    width: 20,
-    height: 20,
+    bottom: 15,
+    right: 15,
+    width: 25,
+    height: 25,
     borderBottomWidth: 3,
     borderRightWidth: 3,
-    borderColor: '#00E676',
+    borderColor: '#3366FF',
   },
 
   loadingContainer: {
@@ -777,6 +1080,12 @@ const styles = StyleSheet.create({
     marginBottom: 15,
     borderRadius: 15,
   },
+  singleFaceCard: {
+    shadowOpacity: 0,
+    elevation: 0,
+    borderWidth: 0,
+    backgroundColor: 'transparent',
+  },
   resultHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -790,67 +1099,303 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   resultContent: {
-    gap: 15,
+    gap: 20,
   },
-  faceCropContainer: {
-    alignItems: 'center',
-    marginBottom: 15,
-    padding: 12,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 15,
-    borderWidth: 1,
-    borderColor: '#e9ecef',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  faceCropImage: {
-    width: 100,
-    height: 120,
-    borderRadius: 15,
-    borderWidth: 2,
-    borderColor: '#2196F3',
-    backgroundColor: '#fff',
-  },
-  ageResultsContainer: {
-    gap: 15,
-  },
-  ageResult: {
+  analysisHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    backgroundColor: '#f5f5f5',
-    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
   },
-  ageLabel: {
-    fontSize: 16,
+  analysisLabel: {
+    color: '#3366FF',
     fontWeight: '600',
+    letterSpacing: 1,
   },
-  ageValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#2196F3',
-  },
-  categoryContainer: {
+  confidenceIndicator: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 15,
+    gap: 8,
   },
-  categoryText: {
+  confidenceBar: {
+    height: 4,
+    backgroundColor: '#3366FF',
+    borderRadius: 2,
+    minWidth: 20,
+  },
+  confidencePercentage: {
+    color: '#3366FF',
+    fontWeight: '600',
+    fontSize: 12,
+  },
+  analysisGrid: {
+    gap: 20,
+  },
+  faceDetectionArea: {
+    gap: 12,
+  },
+  ageEstimationArea: {
+    gap: 12,
+  },
+  sectionTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#666',
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  faceCropContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 24,
+    backgroundColor: 'transparent',
+  },
+  faceCropImage: {
+    width: 200,
+    height: 200,
+    borderRadius: 20,
+    borderWidth: 5,
+    borderColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  faceOverlay: {
+    position: 'absolute',
+    top: 20,
+    left: 20,
+    right: 20,
+    bottom: 20,
+    pointerEvents: 'none',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cornerTopLeft: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: 20,
+    height: 20,
+    borderTopWidth: 2,
+    borderLeftWidth: 2,
+    borderColor: '#3366FF',
+  },
+  cornerTopRight: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    width: 20,
+    height: 20,
+    borderTopWidth: 2,
+    borderRightWidth: 2,
+    borderColor: '#3366FF',
+  },
+  cornerBottomLeft: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    width: 20,
+    height: 20,
+    borderBottomWidth: 2,
+    borderLeftWidth: 2,
+    borderColor: '#3366FF',
+  },
+  cornerBottomRight: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 20,
+    height: 20,
+    borderBottomWidth: 2,
+    borderRightWidth: 2,
+    borderColor: '#3366FF',
+  },
+  detectionIndicator: {
+    backgroundColor: 'rgba(51, 102, 255, 0.9)',
+    borderRadius: 20,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#3366FF',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  detectionIcon: {
+    color: '#fff',
     fontSize: 18,
     fontWeight: 'bold',
   },
-  youngText: {
-    color: '#4CAF50',
+  detectionStatus: {
+    textAlign: 'center',
+    color: '#3366FF',
+    fontWeight: '500',
+    fontSize: 12,
   },
-  adultText: {
-    color: '#FF9800',
+  ageResultsContainer: {
+    gap: 12,
   },
-  seniorText: {
-    color: '#9C27B0',
+  ageResultCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+    marginBottom: 14,
+    width: '100%',
+    alignSelf: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    minHeight: 56,
+  },
+  ageResultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    paddingHorizontal: 4,
+  },
+  modelInfoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  targetIcon: {
+    fontSize: 22,
+    marginRight: 2,
+  },
+  robotIcon: {
+    fontSize: 22,
+    marginRight: 2,
+  },
+  modelName: {
+    fontWeight: 'bold',
+    color: '#333',
+    marginLeft: 4,
+    marginRight: 8,
+    fontSize: 15,
+    flexShrink: 1,
+    minWidth: 0,
+    maxWidth: 120,
+    overflow: 'hidden',
+  },
+  modelSubtitle: {
+    fontSize: 12,
+    color: '#8a99b3', // light gray-blue
+    marginTop: 2,
+    marginBottom: 0,
+    fontWeight: '400',
+  },
+  ageContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    minWidth: 80,
+    justifyContent: 'flex-end',
+  },
+  infoIconContainer: {
+    padding: 2,
+    marginLeft: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  infoIcon: {
+    width: 16,
+    height: 16,
+    color: '#3366FF', // consistent blue
+  },
+  tooltipText: {
+    fontSize: 10,
+    color: '#666',
+    fontStyle: 'italic',
+    marginTop: 4,
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
+  modelBadge: {
+    backgroundColor: '#2196F3',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  badgeText: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: '#fff',
+    letterSpacing: 0.5,
+  },
+  ageValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#5B9BD5', // lighter blue
+    minWidth: 60,
+    textAlign: 'right',
+  },
+  ageUnit: {
+    fontSize: 12,
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 2,
+  },
+  analysisSummary: {
+    gap: 12,
+  },
+  summaryTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#666',
+    letterSpacing: 1,
+  },
+  summaryContent: {
+    gap: 8,
+  },
+  summaryCard: {
+    padding: 16,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+  },
+  summaryAge: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 4,
+  },
+  summaryCategory: {
+    fontSize: 11,
+    color: '#3366FF',
+    fontWeight: '500',
+    letterSpacing: 0.5,
+    marginBottom: 12,
+  },
+  ageIndicator: {
+    width: '100%',
+    height: 4,
+    backgroundColor: '#e9ecef',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  ageBar: {
+    height: '100%',
+    backgroundColor: '#3366FF',
+    borderRadius: 2,
   },
   noResultsCard: {
     alignItems: 'center',
@@ -866,13 +1411,28 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   resultsActions: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     gap: 15,
     marginTop: 20,
+  },
+  shareButton: {
+    backgroundColor: '#2196f3',
+    borderRadius: 24,
+    marginTop: 10,
+    marginBottom: 8,
+    paddingVertical: 14,
   },
   webCameraCard: {
     flex: 1,
     margin: 20,
+  },
+  howItWorksCard: {
+    marginTop: 20,
+    borderRadius: 16,
+    padding: 20,
+    backgroundColor: '#f8f9fa',
+    borderWidth: 1,
+    borderColor: '#e9ecef',
   },
   webCameraTitle: {
     textAlign: 'center',
@@ -896,4 +1456,56 @@ const styles = StyleSheet.create({
   webCameraButton: {
     flex: 1,
   },
+  infoModalCard: {
+    borderRadius: 16,
+    padding: 24,
+    backgroundColor: '#f8f9fa',
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+    minWidth: 300,
+    maxWidth: 340,
+    alignSelf: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 6,
+    zIndex: 1001,
+  },
+  webModalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    width: '100vw',
+    height: '100vh',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+  },
+  closeIconContainer: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    zIndex: 1002,
+    padding: 8,
+  },
+  closeIcon: {
+    width: 32,
+    height: 32,
+  },
+  summaryText: {
+    fontSize: 16,
+    color: '#555',
+    textAlign: 'center',
+    marginTop: 10,
+    marginBottom: 15,
+  },
+  confidenceValue: {
+    fontSize: 12,
+    color: '#3366FF',
+    fontWeight: '600',
+  },
 });
+
