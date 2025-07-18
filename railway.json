@@ -8,8 +8,10 @@
   "deploy": {
     "startCommand": "python main.py",
     "healthcheckPath": "/health",
-    "healthcheckTimeout": 600,
-    "restartPolicyType": "on_failure"
+    "healthcheckTimeout": 180,
+    "restartPolicyType": "on_failure",
+    "numReplicas": 1,
+    "healthcheckInterval": 30
   },
   "environments": {
     "production": {

@@ -56,6 +56,10 @@ if IS_RAILWAY:
     os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
     os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
 
+# Add startup delay for Railway
+if IS_RAILWAY:
+    time.sleep(5)  # Give Railway time to initialize
+
 class FaceResult(BaseModel):
     face_id: int
     age_harvard: Optional[float] = None
@@ -277,8 +281,13 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
-    return {"status": "healthy", "timestamp": time.time()}
+    """Health check endpoint - optimized for Railway"""
+    return {
+        "status": "healthy", 
+        "timestamp": time.time(),
+        "environment": "railway" if IS_RAILWAY else "local",
+        "ready": True
+    }
 
 @app.get("/api/health")
 async def api_health_check():
