@@ -2,16 +2,16 @@
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
     "builder": "nixpacks",
-    "buildCommand": "pip install --no-cache-dir -r requirements.txt",
+    "buildCommand": "pip install --no-cache-dir -r requirements.txt && python -c \"import gdown; import zipfile; import os; MODEL_DIR='model_saved_tf'; MODEL_ZIP='model_saved_tf.zip'; print('📥 Downloading Harvard model during build...'); gdown.download('https://drive.google.com/uc?id=12wNpYBz3j5mP9mt6S_ZH4k0sI6dVDeVV', MODEL_ZIP, quiet=False); print('📦 Extracting Harvard model...'); zipfile.ZipFile(MODEL_ZIP, 'r').extractall('.'); os.remove(MODEL_ZIP); print('✅ Harvard model ready for deployment')\"",
     "watchPatterns": ["**/*.py", "**/*.tsx", "**/*.ts", "**/*.js", "**/*.json"]
   },
   "deploy": {
     "startCommand": "python main.py",
     "healthcheckPath": "/health",
-    "healthcheckTimeout": 300,
+    "healthcheckTimeout": 30,
     "restartPolicyType": "on_failure",
     "numReplicas": 1,
-    "healthcheckInterval": 60
+    "healthcheckInterval": 30
   },
   "environments": {
     "production": {

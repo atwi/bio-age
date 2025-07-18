@@ -135,77 +135,13 @@ def lazy_load_models():
         models_loading = False
         return False
 
-def download_harvard_model():
-    """Download Harvard model if not exists"""
-    import gdown
-    import zipfile
-    import requests
-    
-    MODEL_DIR = "model_saved_tf"
-    MODEL_ZIP = "model_saved_tf.zip"
-    
-    # Try multiple download sources
-    download_sources = [
-        {
-            "name": "Google Drive (Direct)",
-            "url": "https://drive.google.com/uc?id=12wNpYBz3j5mP9mt6S_ZH4k0sI6dVDeVV",
-            "method": "gdown"
-        },
-        {
-            "name": "Google Drive (Alternative)",
-            "url": "https://drive.google.com/file/d/12wNpYBz3j5mP9mt6S_ZH4k0sI6dVDeVV/view?usp=sharing",
-            "method": "gdown_alt"
-        },
-        {
-            "name": "Direct Download (if available)",
-            "url": "https://github.com/atwi/bio-age/releases/download/v1.0/model_saved_tf.zip",
-            "method": "requests"
-        }
-    ]
-    
-    if not os.path.exists(MODEL_DIR):
-        for source in download_sources:
-            try:
-                logger.info(f"📥 Trying to download Harvard model from: {source['name']}")
-                
-                if source['method'] == "gdown":
-                    gdown.download(source['url'], MODEL_ZIP, quiet=False)
-                elif source['method'] == "gdown_alt":
-                    gdown.download(source['url'], MODEL_ZIP, quiet=False, fuzzy=True)
-                elif source['method'] == "requests":
-                    response = requests.get(source['url'], stream=True)
-                    response.raise_for_status()
-                    with open(MODEL_ZIP, 'wb') as f:
-                        for chunk in response.iter_content(chunk_size=8192):
-                            f.write(chunk)
-                
-                if os.path.exists(MODEL_ZIP):
-                    logger.info("📦 Extracting Harvard model...")
-                    with zipfile.ZipFile(MODEL_ZIP, "r") as zip_ref:
-                        zip_ref.extractall(".")
-                    
-                    os.remove(MODEL_ZIP)
-                    logger.info("✅ Harvard model downloaded and extracted successfully")
-                    return True
-                    
-            except Exception as e:
-                logger.warning(f"❌ Failed to download from {source['name']}: {e}")
-                continue
-        
-        logger.error("❌ All download sources failed for Harvard model")
-        return False
-    return True
+
 
 def load_harvard_model():
-    """Load Harvard model with enhanced error handling"""
+    """Load Harvard model - simplified since it's downloaded during build"""
     import tensorflow as tf
     
-    # First try to download if not exists
-    if not download_harvard_model():
-        logger.warning("Harvard model download failed - will continue without Harvard model")
-        return None
-    
-    # Try different possible paths
+    # Try different possible paths (model should already be downloaded during build)
     possible_paths = [
         "model_saved_tf",
         "./model_saved_tf",
@@ -223,7 +159,7 @@ def load_harvard_model():
                 logger.warning(f"Failed to load from {model_path}: {e}")
                 continue
     
-    logger.warning("Harvard model not found or failed to load - will continue without Harvard model")
+    logger.warning("Harvard model not found - will continue without Harvard model")
     return None
 
 def test_deepface():
@@ -359,22 +295,12 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint - optimized for Railway"""
-    global detector, harvard_model, deepface_ready
-    
-    # For Railway, we want to respond quickly even if models aren't loaded yet
-    # The models will be loaded on first request (lazy loading)
+    """Health check endpoint"""
     return {
         "status": "healthy", 
         "timestamp": time.time(),
         "environment": "railway" if IS_RAILWAY else "local",
-        "ready": True,
-        "models_loaded": {
-            "face_detector": detector is not None,
-            "harvard_model": harvard_model is not None,
-            "deepface": deepface_ready if ENABLE_DEEPFACE else "disabled"
-        },
-        "message": "API is ready. Models will be loaded on first request."
+        "ready": True
     }
 
 @app.get("/api/health")
@@ -555,15 +481,4 @@ if __name__ == "__main__":
     print(f"🤖 DeepFace enabled: {ENABLE_DEEPFACE}")
     print(f"⚡ Using lazy loading for models")
     
-    # Add startup delay for Railway to ensure proper initialization
-    if IS_RAILWAY:
-        print("⏳ Railway startup delay: 10 seconds")
-        time.sleep(10)
-    
-    uvicorn.run(
-        app, 
-        host="0.0.0.0", 
-        port=port,
-        timeout_keep_alive=300,  # 5 minutes keep-alive
-        timeout_graceful_shutdown=300  # 5 minutes graceful shutdown
-    ) 
+    uvicorn.run(app, host="0.0.0.0", port=port) 
