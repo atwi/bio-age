@@ -2,7 +2,7 @@
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
     "builder": "nixpacks",
-    "buildCommand": "pip install --no-cache-dir -r requirements.txt && python -c \"import gdown; import zipfile; import os; import sys; MODEL_DIR='model_saved_tf'; MODEL_ZIP='model_saved_tf.zip'; print('📥 Downloading Harvard model during build...'); try: gdown.download('https://drive.google.com/uc?id=12wNpYBz3j5mP9mt6S_ZH4k0sI6dVDeVV', MODEL_ZIP, quiet=False); print('📦 Extracting Harvard model...'); zipfile.ZipFile(MODEL_ZIP, 'r').extractall('.'); os.remove(MODEL_ZIP); print('✅ Harvard model ready for deployment'); except Exception as e: print(f'❌ Model download failed: {e}'); sys.exit(1)\"",
+    "buildCommand": "pip install --no-cache-dir -r requirements.txt && python -c \"import gdown; import zipfile; import os; import sys; print('📥 Downloading Harvard model during build...'); MODEL_ZIP='model_saved_tf.zip'; MODEL_DIR='model_saved_tf'; gdown.download('https://drive.google.com/uc?id=12wNpYBz3j5mP9mt6S_ZH4k0sI6dVDeVV', MODEL_ZIP, quiet=False); print('📦 Extracting Harvard model...'); zipfile.ZipFile(MODEL_ZIP, 'r').extractall('.'); os.remove(MODEL_ZIP); print('✅ Verifying model exists...'); assert os.path.exists(MODEL_DIR), f'Model directory {MODEL_DIR} not found after extraction'; print('✅ Harvard model ready for deployment')\"",
     "watchPatterns": ["**/*.py", "**/*.tsx", "**/*.ts", "**/*.js", "**/*.json"]
   },
   "deploy": {
