@@ -510,4 +510,15 @@ if __name__ == "__main__":
     print(f"🤖 DeepFace enabled: {ENABLE_DEEPFACE}")
     print(f"⚡ Using lazy loading for models")
     
-    uvicorn.run(app, host="0.0.0.0", port=port) 
+    # Add startup delay for Railway to ensure proper initialization
+    if IS_RAILWAY:
+        print("⏳ Railway startup delay: 30 seconds")
+        time.sleep(30)
+    
+    uvicorn.run(
+        app, 
+        host="0.0.0.0", 
+        port=port,
+        timeout_keep_alive=300,  # 5 minutes keep-alive
+        timeout_graceful_shutdown=300  # 5 minutes graceful shutdown
+    ) 
