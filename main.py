@@ -41,9 +41,7 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 
 # Environment detection
 IS_RAILWAY = os.environ.get('RAILWAY_ENVIRONMENT') == 'production'
-# Disable Harvard model on Railway due to download timeouts
-IS_RAILWAY = os.environ.get('RAILWAY_ENVIRONMENT', 'false').lower() == 'true'
-LOAD_HARVARD = os.environ.get('LOAD_HARVARD_MODEL', 'true').lower() == 'true' and not IS_RAILWAY
+LOAD_HARVARD = os.environ.get('LOAD_HARVARD_MODEL', 'true').lower() == 'true'
 ENABLE_DEEPFACE = os.environ.get('ENABLE_DEEPFACE', 'true').lower() == 'true'
 
 # Debug logging for environment variables - FORCE REDEPLOY 2024-12-19
@@ -175,7 +173,7 @@ def download_harvard_model():
                 elif source['method'] == "gdown_alt":
                     gdown.download(source['url'], MODEL_ZIP, quiet=False, fuzzy=True)
                 elif source['method'] == "requests":
-                    response = requests.get(source['url'], stream=True, timeout=30)
+                    response = requests.get(source['url'], stream=True)
                     response.raise_for_status()
                     with open(MODEL_ZIP, 'wb') as f:
                         for chunk in response.iter_content(chunk_size=8192):
@@ -362,11 +360,21 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Health check endpoint - optimized for Railway"""
+    global detector, harvard_model, deepface_ready
+    
+    # For Railway, we want to respond quickly even if models aren't loaded yet
+    # The models will be loaded on first request (lazy loading)
     return {
         "status": "healthy", 
         "timestamp": time.time(),
         "environment": "railway" if IS_RAILWAY else "local",
-        "ready": True
+        "ready": True,
+        "models_loaded": {
+            "face_detector": detector is not None,
+            "harvard_model": harvard_model is not None,
+            "deepface": deepface_ready if ENABLE_DEEPFACE else "disabled"
+        },
+        "message": "API is ready. Models will be loaded on first request."
     }
 
 @app.get("/api/health")
@@ -547,4 +555,15 @@ if __name__ == "__main__":
     print(f"🤖 DeepFace enabled: {ENABLE_DEEPFACE}")
     print(f"⚡ Using lazy loading for models")
     
-    uvicorn.run(app, host="0.0.0.0", port=port) 
+    # Add startup delay for Railway to ensure proper initialization
+    if IS_RAILWAY:
+        print("⏳ Railway startup delay: 10 seconds")
+        time.sleep(10)
+    
+    uvicorn.run(
+        app, 
+        host="0.0.0.0", 
+        port=port,
+        timeout_keep_alive=300,  # 5 minutes keep-alive
+        timeout_graceful_shutdown=300  # 5 minutes graceful shutdown
+    ) 
