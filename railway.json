@@ -22,9 +22,7 @@
         "TF_CPP_MIN_LOG_LEVEL": "3",
         "TF_ENABLE_ONEDNN_OPTS": "0",
         "CUDA_VISIBLE_DEVICES": "-1",
-        "TF_FORCE_GPU_ALLOW_GROWTH": "true",
-        "PYTHONUNBUFFERED": "1",
-        "NODE_ENV": "production"
+        "OPENAI_API_KEY": "${OPENAI_API_KEY}"
       }
     }
   }
