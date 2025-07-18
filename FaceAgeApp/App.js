@@ -447,10 +447,10 @@ function AppContent() {
     
     validFaces.forEach((face, index) => {
       shareText += `Face ${index + 1}:\n`;
-      if (face.age_harvard) {
+      if (face.age_harvard !== null && face.age_harvard !== undefined) {
         shareText += `🎯 Harvard Model: ${face.age_harvard.toFixed(1)} years\n`;
       }
-      if (face.age_deepface) {
+      if (face.age_deepface !== null && face.age_deepface !== undefined) {
         shareText += `🤖 DeepFace Model: ${face.age_deepface.toFixed(1)} years\n`;
       }
       shareText += `📊 Confidence: ${(face.confidence * 100).toFixed(1)}%\n\n`;
@@ -749,7 +749,7 @@ function AppContent() {
                   <Layout style={styles.ageEstimationArea}>
                     <Text category='label' style={styles.sectionTitle}>AGE ESTIMATION</Text>
                     <Layout style={styles.ageResultsContainer}>
-                      {face.age_harvard && (
+                      {face.age_harvard !== null && face.age_harvard !== undefined && (
                         <Layout style={styles.ageResultCard}>
                           <View style={styles.ageResultRow}>
                             <View style={styles.modelInfoContainer}>
@@ -765,7 +765,7 @@ function AppContent() {
                               </View>
                             </View>
                             <View style={styles.ageContainer}>
-                              <Text style={styles.ageValue}>{face.age_harvard.toFixed(1)} years</Text>
+                              <Text style={styles.ageValue}>{face.age_harvard !== null && face.age_harvard !== undefined ? face.age_harvard.toFixed(1) : 'N/A'} years</Text>
                             </View>
                           </View>
                           {harvardTooltipVisible && (
@@ -773,7 +773,7 @@ function AppContent() {
                           )}
                         </Layout>
                       )}
-                      {face.age_deepface && (
+                      {face.age_deepface !== null && face.age_deepface !== undefined && (
                         <Layout style={styles.ageResultCard}>
                           <View style={styles.ageResultRow}>
                             <View style={styles.modelInfoContainer}>
@@ -789,7 +789,7 @@ function AppContent() {
                               </View>
                             </View>
                             <View style={styles.ageContainer}>
-                              <Text style={styles.ageValue}>{face.age_deepface.toFixed(1)} years</Text>
+                              <Text style={styles.ageValue}>{face.age_deepface !== null && face.age_deepface !== undefined ? face.age_deepface.toFixed(1) : 'N/A'} years</Text>
                             </View>
                           </View>
                           {deepfaceTooltipVisible && (
@@ -797,7 +797,7 @@ function AppContent() {
                           )}
                         </Layout>
                       )}
-                      {face.age_chatgpt && (
+                      {face.age_chatgpt !== null && face.age_chatgpt !== undefined && (
                         <Layout style={styles.ageResultCard}>
                           <View style={styles.ageResultRow}>
                             <View style={styles.modelInfoContainer}>
@@ -833,7 +833,18 @@ function AppContent() {
                       const primaryAge = face.age_harvard || face.age_deepface;
                       const modelUsed = face.age_harvard ? 'Harvard Clinical Model' : 'DeepFace General Model';
                       
-                      if (primaryAge < 30) {
+                      if (!primaryAge || primaryAge === null || primaryAge === undefined) {
+                        return (
+                          <Layout style={styles.summaryCard}>
+                            <Text category='h6' style={styles.summaryAge}>
+                              No age estimate available
+                            </Text>
+                            <Text category='c1' style={styles.summaryCategory}>
+                              ANALYSIS FAILED • Try a different photo
+                            </Text>
+                          </Layout>
+                        );
+                      } else if (primaryAge < 30) {
                         return (
                           <Layout style={styles.summaryCard}>
                             <Text category='h6' style={styles.summaryAge}>
