@@ -29,6 +29,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the entire project
 COPY . .
 
+# Download Harvard model during build (fallback for Railway)
+RUN python -c "import gdown; import zipfile; import os; print('📥 Downloading Harvard model during Docker build...'); MODEL_ZIP='model_saved_tf.zip'; MODEL_DIR='model_saved_tf'; gdown.download('https://drive.google.com/uc?id=12wNpYBz3j5mP9mt6S_ZH4k0sI6dVDeVV', MODEL_ZIP, quiet=False); print('📦 Extracting Harvard model...'); zipfile.ZipFile(MODEL_ZIP, 'r').extractall('.'); os.remove(MODEL_ZIP); print('✅ Verifying model exists...'); assert os.path.exists(MODEL_DIR), f'Model directory {MODEL_DIR} not found after extraction'; print('✅ Harvard model ready for deployment')"
+
 # Build the React Native web app
 RUN cd FaceAgeApp && \
     npm install && \

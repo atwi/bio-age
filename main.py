@@ -108,6 +108,8 @@ def lazy_load_models():
             harvard_model = load_harvard_model()
             if harvard_model:
                 logger.info("✅ Harvard model loaded")
+            else:
+                logger.warning("⚠️ Harvard model failed to load, continuing without it")
             gc.collect()
         
         # Test DeepFace last (largest) - only if enabled
@@ -116,24 +118,34 @@ def lazy_load_models():
             deepface_ready = test_deepface()
             if deepface_ready:
                 logger.info("✅ DeepFace initialized")
+            else:
+                logger.warning("⚠️ DeepFace failed to initialize, continuing without it")
             gc.collect()
         elif not ENABLE_DEEPFACE:
             logger.info("🚫 DeepFace disabled by configuration")
             deepface_ready = True  # Mark as ready to skip loading
         
         models_loading = False
-        # Return True if we have at least the face detector and one age estimation model
+        
+        # Check what we have available
         has_face_detector = detector is not None
         has_harvard = harvard_model is not None
         has_deepface = deepface_ready or not ENABLE_DEEPFACE
         
+        logger.info(f"📊 Model status: Face detector: {has_face_detector}, Harvard: {has_harvard}, DeepFace: {has_deepface}")
+        
         # We need face detector and at least one age estimation model
-        return has_face_detector and (has_harvard or has_deepface)
+        if has_face_detector and (has_harvard or has_deepface):
+            logger.info("✅ Sufficient models loaded for face analysis")
+            return True
+        else:
+            logger.warning("⚠️ Limited models available - face analysis may be restricted")
+            return has_face_detector  # Return True if we at least have face detection
         
     except Exception as e:
         logger.error(f"❌ Model loading failed: {e}")
         models_loading = False
-        return False
+        return detector is not None  # Return True if we at least have face detection
 
 
 
@@ -144,11 +156,17 @@ def load_harvard_model():
     # Model should already be downloaded during build phase
     possible_paths = [
         "model_saved_tf",
-        "./model_saved_tf"
+        "./model_saved_tf",
+        "FaceAge/model_saved_tf",
+        "./FaceAge/model_saved_tf"
     ]
     
     # Debug: list all files in current directory
     logger.info(f"Current directory contents: {os.listdir('.')}")
+    
+    # Check if we're in a subdirectory
+    if os.path.exists("FaceAge"):
+        logger.info(f"FaceAge directory contents: {os.listdir('FaceAge')}")
     
     for model_path in possible_paths:
         logger.info(f"Checking path: {model_path} (exists: {os.path.exists(model_path)})")
@@ -161,6 +179,45 @@ def load_harvard_model():
             except Exception as e:
                 logger.warning(f"Failed to load from {model_path}: {e}")
                 continue
+    
+    # If model not found, try to download it at runtime (fallback)
+    logger.warning("❌ Harvard model not found! Attempting runtime download...")
+    try:
+        import gdown
+        import zipfile
+        
+        logger.info("📥 Downloading Harvard model at runtime...")
+        MODEL_ZIP = 'model_saved_tf.zip'
+        MODEL_DIR = 'model_saved_tf'
+        
+        # Download the model
+        gdown.download(
+            'https://drive.google.com/uc?id=12wNpYBz3j5mP9mt6S_ZH4k0sI6dVDeVV', 
+            MODEL_ZIP, 
+            quiet=False
+        )
+        
+        if os.path.exists(MODEL_ZIP):
+            logger.info("📦 Extracting Harvard model...")
+            with zipfile.ZipFile(MODEL_ZIP, 'r') as zip_ref:
+                zip_ref.extractall('.')
+            
+            # Clean up zip file
+            os.remove(MODEL_ZIP)
+            
+            # Try to load the model
+            if os.path.exists(MODEL_DIR):
+                logger.info(f"Loading Harvard model from runtime download: {MODEL_DIR}")
+                model = tf.keras.models.load_model(MODEL_DIR)
+                logger.info("✅ Harvard model loaded successfully from runtime download")
+                return model
+            else:
+                logger.error("❌ Model directory not found after runtime download")
+        else:
+            logger.error("❌ Model zip file not downloaded")
+            
+    except Exception as e:
+        logger.error(f"❌ Runtime model download failed: {e}")
     
     logger.error("❌ Harvard model not found! Build phase download must have failed.")
     logger.error("Expected model_saved_tf directory to exist from build phase.")
@@ -221,7 +278,7 @@ def estimate_age_chatgpt(image_base64: str) -> Optional[int]:
         # Prepare the image for ChatGPT
         image_url = f"data:image/jpeg;base64,{image_base64}"
         
-        # Call ChatGPT Vision API
+        # Call ChatGPT Vision API - remove proxies parameter
         from openai import OpenAI
         client = OpenAI(api_key=openai.api_key)
         
@@ -309,22 +366,18 @@ async def health_check():
 
 @app.get("/api/health")
 async def api_health_check():
-    """API health check with model status"""
-    global detector, harvard_model, deepface_ready
-    
+    # Ensure models are loaded before reporting status
+    lazy_load_models()
+    harvard_status = harvard_model is not None
+    deepface_status = deepface_ready if 'deepface_ready' in globals() else False
+    chatgpt_status = bool(os.environ.get('OPENAI_API_KEY'))
     return {
         "status": "healthy",
         "models": {
-            "face_detector": detector is not None,
-            "harvard_model": harvard_model is not None,
-            "deepface": deepface_ready if ENABLE_DEEPFACE else "disabled"
-        },
-        "config": {
-            "enable_deepface": ENABLE_DEEPFACE,
-            "load_harvard": LOAD_HARVARD,
-            "is_railway": IS_RAILWAY
-        },
-        "timestamp": time.time()
+            "harvard": harvard_status,
+            "deepface": deepface_status,
+            "chatgpt": chatgpt_status
+        }
     }
 
 @app.post("/api/analyze-face", response_model=AnalyzeResponse)

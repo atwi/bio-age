@@ -6,7 +6,7 @@ cmds = ["pip install --no-cache-dir -r requirements.txt"]
 
 [phases.build]
 cmds = [
-  "python -c \"import gdown; import zipfile; import os; import sys; print('📥 Downloading Harvard model during build...'); MODEL_ZIP='model_saved_tf.zip'; MODEL_DIR='model_saved_tf'; gdown.download('https://drive.google.com/uc?id=12wNpYBz3j5mP9mt6S_ZH4k0sI6dVDeVV', MODEL_ZIP, quiet=False); print('📦 Extracting Harvard model...'); zipfile.ZipFile(MODEL_ZIP, 'r').extractall('.'); os.remove(MODEL_ZIP); print('✅ Verifying model exists...'); assert os.path.exists(MODEL_DIR), f'Model directory {MODEL_DIR} not found after extraction'; print('✅ Harvard model ready for deployment')\"",
+  "python -c \"import gdown; import zipfile; import os; import sys; print('📥 Downloading Harvard model during build...'); MODEL_ZIP='model_saved_tf.zip'; MODEL_DIR='model_saved_tf'; print('🔗 Downloading from Google Drive...'); result = gdown.download('https://drive.google.com/uc?id=12wNpYBz3j5mP9mt6S_ZH4k0sI6dVDeVV', MODEL_ZIP, quiet=False); print(f'Download result: {result}'); print('📦 Extracting Harvard model...'); zipfile.ZipFile(MODEL_ZIP, 'r').extractall('.'); os.remove(MODEL_ZIP); print('✅ Verifying model exists...'); assert os.path.exists(MODEL_DIR), f'Model directory {MODEL_DIR} not found after extraction'; print(f'Model directory contents: {os.listdir(MODEL_DIR)}'); print('✅ Harvard model ready for deployment')\"",
   "cd FaceAgeApp && npm install && npx expo export --platform web"
 ]
 

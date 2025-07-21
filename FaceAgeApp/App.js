@@ -18,6 +18,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as Sharing from 'expo-sharing';
 import { Ionicons } from '@expo/vector-icons';
+import Constants from 'expo-constants';
 
 // UI Kitten imports
 import * as eva from '@eva-design/eva';
@@ -34,25 +35,27 @@ import {
   Spinner,
   IconRegistry,
   Modal,
+  Tooltip,
 } from '@ui-kitten/components';
 
 const { width, height } = Dimensions.get('window');
 
 // API Configuration
 const getApiBaseUrl = () => {
-  // Check if we're in development or production
   if (typeof window !== 'undefined' && window.location) {
     // Web environment
     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-      // Local development - use /api prefix for unified deployment
       return 'http://localhost:8001/api';
     } else {
-      // Production - use relative URLs since API is served from same domain
       return '/api';
     }
+  } else if (Constants.manifest?.debuggerHost) {
+    // Expo Go (mobile) - get Metro Bundler IP
+    const debuggerHost = Constants.manifest.debuggerHost.split(':')[0];
+    return `http://${debuggerHost}:8001/api`;
   } else {
-    // React Native mobile environment
-    return 'http://192.168.96.130:8001/api';
+    // Fallback
+    return 'http://192.168.96.123:8001/api';
   }
 };
 
@@ -87,6 +90,8 @@ const InfoIcon = (props) => (
   <Icon {...props} name='info-outline'/>
 );
 
+const ANALYZE_IMAGE_SIZE = Math.min(width * 0.8, 320);
+
 function AppContent() {
   const [currentStep, setCurrentStep] = useState(1); // 1: Upload, 2: Analyzing, 3: Results
   const [selectedImage, setSelectedImage] = useState(null);
@@ -105,6 +110,7 @@ function AppContent() {
   const [harvardTooltipVisible, setHarvardTooltipVisible] = useState(false);
   const [deepfaceTooltipVisible, setDeepfaceTooltipVisible] = useState(false);
   const [chatgptTooltipVisible, setChatgptTooltipVisible] = useState(false);
+  const [showApiTooltip, setShowApiTooltip] = useState(false);
 
   // Request permissions on mount
   useEffect(() => {
@@ -621,16 +627,7 @@ function AppContent() {
         </View>
 
         <Layout style={styles.apiStatusContainer}>
-          {apiHealth ? (
-            <Text category='c1' style={[
-              styles.apiStatus,
-              apiHealth.status === 'healthy' ? styles.apiConnected : styles.apiDisconnected
-            ]}>
-              {apiHealth.status === 'healthy' ? '✅ API Connected' : '❌ API Disconnected'}
-            </Text>
-          ) : (
-            <Text category='c1' style={styles.apiStatus}>🔄 Checking API...</Text>
-          )}
+          {renderApiStatus()}
         </Layout>
 
         {renderInfoModal()}
@@ -648,31 +645,38 @@ function AppContent() {
         </Text>
       </Layout>
 
-      <Layout style={[styles.contentContainer, { minHeight: 0, maxHeight: getResponsiveHeight() * 0.7, justifyContent: 'center' }]}> 
+      <Layout style={[styles.contentContainer, { minHeight: 0, maxHeight: getResponsiveHeight() * 0.7, justifyContent: 'center', alignItems: 'center' }]}> 
         {selectedImage && (
-          <Layout style={styles.analyzingImageContainer}>
+          <Layout style={[styles.analyzingImageContainer, { width: ANALYZE_IMAGE_SIZE, height: ANALYZE_IMAGE_SIZE }]}> 
             <Image 
               source={{ uri: selectedImage.uri }} 
-              style={[styles.analyzingImage, { maxHeight: getResponsiveHeight() * 0.4, maxWidth: '100%' }]}
+              style={{ width: ANALYZE_IMAGE_SIZE, height: ANALYZE_IMAGE_SIZE, borderRadius: 20 }}
               resizeMode="cover"
             />
-            <View style={styles.scanOverlay}>
+            <View style={[styles.scanOverlay, { width: ANALYZE_IMAGE_SIZE, height: ANALYZE_IMAGE_SIZE }]}> 
               <Animated.View style={[
                 styles.scanLine,
                 {
+                  width: ANALYZE_IMAGE_SIZE * 0.8, // 80% width
+                  left: '50%', // center horizontally
+                  position: 'absolute',
                   opacity: scanLineOpacity,
-                  transform: [{
-                    translateY: scanLinePosition.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [-(width * 0.6) / 2, (width * 0.6) / 2],
-                    })
-                  }]
+                  transform: [
+                    { translateX: -(ANALYZE_IMAGE_SIZE * 0.8) / 2 }, // center the line
+                    {
+                      translateY: scanLinePosition.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [20, ANALYZE_IMAGE_SIZE - 20 - 4], // match borderRadius
+                      })
+                    }
+                  ]
                 }
               ]} />
-              <View style={styles.scanCornerTopLeft} />
-              <View style={styles.scanCornerTopRight} />
-              <View style={styles.scanCornerBottomLeft} />
-              <View style={styles.scanCornerBottomRight} />
+              {/* Brackets inset to match border radius visually */}
+              <View style={[styles.scanCornerTopLeft, { top: 20, left: 20 }]} />
+              <View style={[styles.scanCornerTopRight, { top: 20, right: 20 }]} />
+              <View style={[styles.scanCornerBottomLeft, { bottom: 20, left: 20 }]} />
+              <View style={[styles.scanCornerBottomRight, { bottom: 20, right: 20 }]} />
             </View>
           </Layout>
         )}
@@ -827,13 +831,15 @@ function AppContent() {
 
                 {/* Analysis Summary */}
                 <Layout style={styles.analysisSummary}>
-                  <Text category='label' style={styles.summaryTitle}>ANALYSIS SUMMARY</Text>
+                  <Text category='label' style={styles.summaryTitle}>MEAN AGE ESTIMATE</Text>
                   <Layout style={styles.summaryContent}>
                     {(() => {
-                      const primaryAge = face.age_harvard || face.age_deepface;
-                      const modelUsed = face.age_harvard ? 'Harvard Clinical Model' : 'DeepFace General Model';
-                      
-                      if (!primaryAge || primaryAge === null || primaryAge === undefined) {
+                      // Collect all available model ages for this face
+                      const ages = [];
+                      if (face.age_harvard !== null && face.age_harvard !== undefined) ages.push(face.age_harvard);
+                      if (face.age_deepface !== null && face.age_deepface !== undefined) ages.push(face.age_deepface);
+                      if (face.age_chatgpt !== null && face.age_chatgpt !== undefined) ages.push(face.age_chatgpt);
+                      if (ages.length === 0) {
                         return (
                           <Layout style={styles.summaryCard}>
                             <Text category='h6' style={styles.summaryAge}>
@@ -844,49 +850,21 @@ function AppContent() {
                             </Text>
                           </Layout>
                         );
-                      } else if (primaryAge < 30) {
-                        return (
-                          <Layout style={styles.summaryCard}>
-                            <Text category='h6' style={styles.summaryAge}>
-                              {primaryAge.toFixed(1)} years
-                            </Text>
-                            <Text category='c1' style={styles.summaryCategory}>
-                              YOUNG ADULT • {modelUsed}
-                            </Text>
-                            <View style={styles.ageIndicator}>
-                              <View style={[styles.ageBar, { width: `${(primaryAge / 100) * 100}%` }]} />
-                            </View>
-                          </Layout>
-                        );
-                      } else if (primaryAge < 50) {
-                        return (
-                          <Layout style={styles.summaryCard}>
-                            <Text category='h6' style={styles.summaryAge}>
-                              {primaryAge.toFixed(1)} years
-                            </Text>
-                            <Text category='c1' style={styles.summaryCategory}>
-                              MIDDLE ADULT • {modelUsed}
-                            </Text>
-                            <View style={styles.ageIndicator}>
-                              <View style={[styles.ageBar, { width: `${(primaryAge / 100) * 100}%` }]} />
-                            </View>
-                          </Layout>
-                        );
-                      } else {
-                        return (
-                          <Layout style={styles.summaryCard}>
-                            <Text category='h6' style={styles.summaryAge}>
-                              {primaryAge.toFixed(1)} years
-                            </Text>
-                            <Text category='c1' style={styles.summaryCategory}>
-                              SENIOR ADULT • {modelUsed}
-                            </Text>
-                            <View style={styles.ageIndicator}>
-                              <View style={[styles.ageBar, { width: `${(primaryAge / 100) * 100}%` }]} />
-                            </View>
-                          </Layout>
-                        );
                       }
+                      const meanAge = ages.reduce((a, b) => a + b, 0) / ages.length;
+                      return (
+                        <Layout style={styles.summaryCard}>
+                          <Text category='h6' style={styles.summaryAge}>
+                            {meanAge.toFixed(1)} years
+                          </Text>
+                          <Text category='c1' style={styles.summaryCategory}>
+                            Mean of {ages.length} model{ages.length > 1 ? 's' : ''}
+                          </Text>
+                          <View style={styles.ageIndicator}>
+                            <View style={[styles.ageBar, { width: `${(meanAge / 100) * 100}%` }]} />
+                          </View>
+                        </Layout>
+                      );
                     })()}
                   </Layout>
                 </Layout>
@@ -927,6 +905,43 @@ function AppContent() {
         >
           Try Another Photo
         </Button>
+      </Layout>
+    </Layout>
+  );
+
+  const renderApiStatus = () => (
+    <Layout style={{ alignItems: 'center', marginTop: 8 }}>
+      <Text style={{ fontSize: 11, color: '#888', marginBottom: 6, fontWeight: '600', letterSpacing: 0.5 }}>Model Status</Text>
+      <Layout style={{
+        flexDirection: 'row',
+        gap: 8,
+        paddingVertical: 0,
+        paddingHorizontal: 0,
+        borderRadius: 0,
+        backgroundColor: 'transparent',
+        borderWidth: 0,
+        justifyContent: 'center',
+        alignItems: 'center',
+        minHeight: 20,
+      }}>
+        <Layout style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 2 }}>
+          <Text style={{ fontSize: 15, color: apiHealth?.models?.harvard ? '#4CAF50' : '#f44336', fontWeight: 'bold' }}>
+            {apiHealth?.models?.harvard ? '✔' : '✖'}
+          </Text>
+          <Text style={{ fontSize: 12, fontWeight: '600', marginLeft: 3, color: '#222' }}>Harvard</Text>
+        </Layout>
+        <Layout style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 2 }}>
+          <Text style={{ fontSize: 15, color: apiHealth?.models?.deepface ? '#4CAF50' : '#f44336', fontWeight: 'bold' }}>
+            {apiHealth?.models?.deepface ? '✔' : '✖'}
+          </Text>
+          <Text style={{ fontSize: 12, fontWeight: '600', marginLeft: 3, color: '#222' }}>DeepFace</Text>
+        </Layout>
+        <Layout style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 2 }}>
+          <Text style={{ fontSize: 15, color: apiHealth?.models?.chatgpt ? '#4CAF50' : '#f44336', fontWeight: 'bold' }}>
+            {apiHealth?.models?.chatgpt ? '✔' : '✖'}
+          </Text>
+          <Text style={{ fontSize: 12, fontWeight: '600', marginLeft: 3, color: '#222' }}>ChatGPT</Text>
+        </Layout>
       </Layout>
     </Layout>
   );
@@ -1059,11 +1074,10 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     justifyContent: 'center',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     overflow: 'hidden',
   },
   scanLine: {
-    width: '85%',
     height: 4,
     backgroundColor: '#3366FF',
     borderRadius: 2,
@@ -1075,44 +1089,40 @@ const styles = StyleSheet.create({
   },
   scanCornerTopLeft: {
     position: 'absolute',
-    top: 15,
-    left: 15,
-    width: 25,
-    height: 25,
+    width: 18,
+    height: 18,
     borderTopWidth: 3,
     borderLeftWidth: 3,
     borderColor: '#3366FF',
-  },
+    borderTopLeftRadius: 8,
+},
   scanCornerTopRight: {
     position: 'absolute',
-    top: 15,
-    right: 15,
-    width: 25,
-    height: 25,
+    width: 18,
+    height: 18,
     borderTopWidth: 3,
     borderRightWidth: 3,
     borderColor: '#3366FF',
-  },
+    borderTopRightRadius: 8,
+},
   scanCornerBottomLeft: {
     position: 'absolute',
-    bottom: 15,
-    left: 15,
-    width: 25,
-    height: 25,
+    width: 18,
+    height: 18,
     borderBottomWidth: 3,
     borderLeftWidth: 3,
     borderColor: '#3366FF',
-  },
+    borderBottomLeftRadius: 8,
+},
   scanCornerBottomRight: {
     position: 'absolute',
-    bottom: 15,
-    right: 15,
-    width: 25,
-    height: 25,
+    width: 18,
+    height: 18,
     borderBottomWidth: 3,
     borderRightWidth: 3,
     borderColor: '#3366FF',
-  },
+    borderBottomRightRadius: 8,
+},
 
   loadingContainer: {
     alignItems: 'center',
