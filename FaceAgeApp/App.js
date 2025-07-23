@@ -19,6 +19,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as Sharing from 'expo-sharing';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
+import { LinearGradient } from 'expo-linear-gradient';
 
 // UI Kitten imports
 import * as eva from '@eva-design/eva';
@@ -92,6 +93,39 @@ const InfoIcon = (props) => (
 
 const ANALYZE_IMAGE_SIZE = Math.min(width * 0.8, 320);
 
+const AGE_FACTOR_ICONS = {
+  skin_texture: '🧬',
+  skin_tone: '🎨',
+  hair: '💇',
+  facial_volume: '💉',
+};
+const AGE_FACTOR_LABELS = {
+  skin_texture: 'Skin Texture',
+  skin_tone: 'Skin Tone',
+  hair: 'Hair',
+  facial_volume: 'Facial Volume',
+};
+
+// At the top, add icons/labels for models:
+const MODEL_ICONS = {
+  harvard: '🎓',
+  deepface: '🤖',
+  chatgpt: '💬',
+  mean: '📊',
+};
+const MODEL_LABELS = {
+  harvard: 'Harvard',
+  deepface: 'DeepFace',
+  chatgpt: 'ChatGPT',
+  mean: 'Mean Age',
+};
+
+const MODEL_DESCRIPTIONS = {
+  harvard: 'Best for clinical/biological age estimation',
+  deepface: 'Best for general face age estimation',
+  chatgpt: 'Best for human-like age perception',
+};
+
 function AppContent() {
   const [currentStep, setCurrentStep] = useState(1); // 1: Upload, 2: Analyzing, 3: Results
   const [selectedImage, setSelectedImage] = useState(null);
@@ -111,6 +145,7 @@ function AppContent() {
   const [deepfaceTooltipVisible, setDeepfaceTooltipVisible] = useState(false);
   const [chatgptTooltipVisible, setChatgptTooltipVisible] = useState(false);
   const [showApiTooltip, setShowApiTooltip] = useState(false);
+  const [expandedModel, setExpandedModel] = useState(null);
 
   // Request permissions on mount
   useEffect(() => {
@@ -360,6 +395,14 @@ function AppContent() {
       if (response.ok) {
         const data = await response.json();
         console.log('Analysis results:', data);
+        // Log ChatGPT debug info for each face
+        if (data.faces) {
+          data.faces.forEach((face, i) => {
+            console.log(`Face ${i}: ChatGPT raw response:`, face.chatgpt_raw_response);
+            console.log(`Face ${i}: ChatGPT fallback text:`, face.chatgpt_fallback_text);
+            console.log(`Face ${i}: ChatGPT error:`, face.chatgpt_error);
+          });
+        }
         setResults(data);
         
         // Add minimum delay to show scanning animation (reduced for Railway)
@@ -530,6 +573,51 @@ function AppContent() {
     );
   }
 
+  const modelDetails = [
+    {
+      key: 'harvard',
+      icon: '🧬',
+      name: 'Harvard FaceAge Model',
+      summary: 'A research-grade deep learning model for biological age estimation from facial images.',
+      details: (
+        <>
+          <b>Training:</b> Trained on the Harvard FaceAge dataset, with over 56,000 images from clinical and public sources, annotated for biological age.{"\n"}
+          <b>Strengths:</b> Designed for medical/biological age, robust to some real-world variation.{"\n"}
+          <b>Weaknesses:</b> Systematically inaccurate in people under 40; not trained for cosmetic age.{"\n"}
+          <b>Reference:</b> <a href="https://github.com/AIM-Harvard/FaceAge" target="_blank">Harvard FaceAge GitHub</a>{"\n"}
+        </>
+      )
+    },
+    {
+      key: 'deepface',
+      icon: '🤖',
+      name: 'DeepFace',
+      summary: 'A popular open-source face analysis library using deep learning.',
+      details: (
+        <>
+          <b>Training:</b> Uses VGG-Face, trained on 2.6 million images from 2,622 identities.{"\n"}
+          <b>Strengths:</b> Fast, works on many faces, easy to use.{"\n"}
+          <b>Weaknesses:</b> Chronological age only, less accurate for older/younger extremes.{"\n"}
+          <b>Reference:</b> <a href="https://github.com/serengil/deepface" target="_blank">DeepFace GitHub</a>
+        </>
+      )
+    },
+    {
+      key: 'gpt',
+      icon: '💬',
+      name: 'ChatGPT Vision',
+      summary: 'A general-purpose vision-language model (GPT-4o) that estimates age from images and text.',
+      details: (
+        <>
+          <b>Training:</b> Trained on a broad mix of web images and text, not specifically for age estimation.{"\n"}
+          <b>Strengths:</b> Can explain reasoning, flexible, works on a wide range of images.{"\n"}
+          <b>Weaknesses:</b> Not a specialist, may hallucinate or over-interpret features, not always accurate.{"\n"}
+          <b>Reference:</b> <a href="https://platform.openai.com/docs/guides/vision" target="_blank">OpenAI GPT-4o</a>
+        </>
+      )
+    }
+  ];
+
   const renderInfoModal = () => {
     const content = (
       <Layout style={styles.infoModalCard}>
@@ -546,15 +634,22 @@ function AppContent() {
         <Text appearance="hint" style={{ marginBottom: 12 }}>
           This app uses deep learning models to estimate your biological age based on facial features.
         </Text>
-        <Text>
-          🧬 <Text style={{ fontWeight: 'bold' }}>Harvard Model</Text> – tuned for older faces
-        </Text>
-        <Text>
-          🤖 <Text style={{ fontWeight: 'bold' }}>DeepFace</Text> – general-purpose AI face analysis
-        </Text>
-        <Text>
-          🎯 <Text style={{ fontWeight: 'bold' }}>MTCNN</Text> – fast & accurate face detection
-        </Text>
+        {modelDetails.map(model => (
+          <View key={model.key} style={{ marginBottom: 18 }}>
+            <Text style={{ fontWeight: 'bold', fontSize: 15 }}>{model.icon} {model.name}</Text>
+            <Text style={{ fontSize: 13, color: '#444', marginTop: 4 }}>{model.summary}</Text>
+            {expandedModel === model.key && (
+              <View style={{ marginTop: 8, backgroundColor: '#f7f7f7', borderRadius: 8, padding: 10 }}>
+                <Text style={{ fontSize: 12, color: '#333' }}>{model.details}</Text>
+              </View>
+            )}
+            <TouchableOpacity onPress={() => setExpandedModel(expandedModel === model.key ? null : model.key)}>
+              <Text style={{ color: '#2e7be4', marginTop: 6, fontSize: 12 }}>
+                {expandedModel === model.key ? 'Show less' : 'Show more'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ))}
       </Layout>
     );
     if (Platform.OS === 'web') {
@@ -650,28 +745,45 @@ function AppContent() {
           <Layout style={[styles.analyzingImageContainer, { width: ANALYZE_IMAGE_SIZE, height: ANALYZE_IMAGE_SIZE }]}> 
             <Image 
               source={{ uri: selectedImage.uri }} 
-              style={{ width: ANALYZE_IMAGE_SIZE, height: ANALYZE_IMAGE_SIZE, borderRadius: 20 }}
+              style={{
+                width: ANALYZE_IMAGE_SIZE,
+                height: ANALYZE_IMAGE_SIZE,
+                borderRadius: 20,
+              }}
               resizeMode="cover"
             />
             <View style={[styles.scanOverlay, { width: ANALYZE_IMAGE_SIZE, height: ANALYZE_IMAGE_SIZE }]}> 
               <Animated.View style={[
-                styles.scanLine,
                 {
-                  width: ANALYZE_IMAGE_SIZE * 0.8, // 80% width
-                  left: '50%', // center horizontally
                   position: 'absolute',
+                  left: '50%',
+                  width: ANALYZE_IMAGE_SIZE * 0.95,
+                  height: 6,
+                  borderRadius: 3,
+                  shadowColor: '#4f8cff',
+                  shadowOffset: { width: 0, height: 0 },
+                  shadowOpacity: 0.5,
+                  shadowRadius: 12,
+                  elevation: 8,
                   opacity: scanLineOpacity,
                   transform: [
-                    { translateX: -(ANALYZE_IMAGE_SIZE * 0.8) / 2 }, // center the line
+                    { translateX: -(ANALYZE_IMAGE_SIZE * 0.95) / 2 },
                     {
                       translateY: scanLinePosition.interpolate({
                         inputRange: [0, 1],
-                        outputRange: [20, ANALYZE_IMAGE_SIZE - 20 - 4], // match borderRadius
+                        outputRange: [0, ANALYZE_IMAGE_SIZE - 6],
                       })
                     }
                   ]
                 }
-              ]} />
+              ]}>
+                <LinearGradient
+                  colors={['#4f8cff', '#4fd1c5']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={{ width: '100%', height: '100%', borderRadius: 3 }}
+                />
+              </Animated.View>
               {/* Brackets inset to match border radius visually */}
               <View style={[styles.scanCornerTopLeft, { top: 20, left: 20 }]} />
               <View style={[styles.scanCornerTopRight, { top: 20, right: 20 }]} />
@@ -696,8 +808,8 @@ function AppContent() {
 
   // Step 3: Show Results
   const renderStep3 = () => (
-    <Layout style={styles.stepContainer}>
-      <ScrollView style={styles.resultsScrollView}>
+    <Layout style={[styles.stepContainer, { paddingLeft: 0, paddingRight: 0, maxWidth: 500, width: '100%', alignSelf: 'center' }]}>
+      <ScrollView style={[styles.resultsScrollView, { width: '100%', maxWidth: 500, alignSelf: 'center', paddingHorizontal: 0, marginHorizontal: 0 }]}>
         <Layout style={styles.headerContainer}>
           <Text category='h4' style={styles.stepTitle}>🎯 Analysis Results</Text>
           <Text category='s1' style={styles.stepSubtitle}>
@@ -710,7 +822,11 @@ function AppContent() {
             const isSingleFace = filteredFaces.length === 1;
             
             return (
-              <Card key={index} style={[styles.resultCard, isSingleFace && styles.singleFaceCard]}>
+              <Card key={index} style={[
+                styles.resultCard,
+                { width: '100%', alignSelf: 'center', marginLeft: 0, marginRight: 0 },
+                isSingleFace && styles.singleFaceCard
+              ]}>
                 {!isSingleFace && (
                   <Layout style={styles.resultHeader}>
                     <Text category='h6' style={styles.resultTitle}>
@@ -732,11 +848,27 @@ function AppContent() {
                     )}
                     {face.face_crop_base64 && (
                       <Layout style={styles.faceCropContainer}>
-                        <Image
-                          source={{ uri: `data:image/jpeg;base64,${face.face_crop_base64}` }}
-                          style={styles.faceCropImage}
-                          resizeMode="cover"
-                        />
+                        <View style={{
+                          width: 200,
+                          height: 200,
+                          borderRadius: 20,
+                          borderWidth: 10,
+                          borderColor: '#fff',
+                          shadowColor: '#000',
+                          shadowOffset: { width: 0, height: 4 },
+                          shadowOpacity: 0.1,
+                          shadowRadius: 8,
+                          elevation: 5,
+                          backgroundColor: '#fff',
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                        }}>
+                          <Image
+                            source={{ uri: `data:image/jpeg;base64,${face.face_crop_base64}` }}
+                            style={{ width: '100%', height: '100%', borderRadius: 20 }}
+                            resizeMode="cover"
+                          />
+                        </View>
                         <View style={styles.faceOverlay}>
                           <View style={styles.detectionIndicator}>
                             <Text style={styles.detectionIcon}>✓</Text>
@@ -744,130 +876,156 @@ function AppContent() {
                         </View>
                       </Layout>
                     )}
-                    <Text category='c1' style={styles.detectionStatus}>
-                      ✓ MTCNN Detection Successful
-                    </Text>
                   </Layout>
 
                   {/* Age Estimation Results */}
-                  <Layout style={styles.ageEstimationArea}>
-                    <Text category='label' style={styles.sectionTitle}>AGE ESTIMATION</Text>
-                    <Layout style={styles.ageResultsContainer}>
-                      {face.age_harvard !== null && face.age_harvard !== undefined && (
-                        <Layout style={styles.ageResultCard}>
-                          <View style={styles.ageResultRow}>
-                            <View style={styles.modelInfoContainer}>
-                              <Text style={styles.targetIcon}>🎯</Text>
-                              <View style={{flexShrink: 1, minWidth: 0}}>
-                                <View style={{flexDirection: 'row', alignItems: 'center'}}>
-                                  <Text style={styles.modelName} numberOfLines={1} ellipsizeMode="tail">Harvard Model</Text>
-                                  <TouchableOpacity onPress={() => setHarvardTooltipVisible(!harvardTooltipVisible)} style={styles.infoIconContainer}>
-                                    <InfoIcon style={styles.infoIcon} />
-                                  </TouchableOpacity>
-                                </View>
-                                <Text style={styles.modelSubtitle}>Best for clinical/biological age estimation</Text>
-                              </View>
-                            </View>
-                            <View style={styles.ageContainer}>
-                              <Text style={styles.ageValue}>{face.age_harvard !== null && face.age_harvard !== undefined ? face.age_harvard.toFixed(1) : 'N/A'} years</Text>
-                            </View>
-                          </View>
-                          {harvardTooltipVisible && (
-                            <Text style={styles.tooltipText}>Most accurate for clinical/biological age estimation.</Text>
-                          )}
-                        </Layout>
-                      )}
-                      {face.age_deepface !== null && face.age_deepface !== undefined && (
-                        <Layout style={styles.ageResultCard}>
-                          <View style={styles.ageResultRow}>
-                            <View style={styles.modelInfoContainer}>
-                              <Text style={styles.targetIcon}>🤖</Text>
-                              <View style={{flexShrink: 1, minWidth: 0}}>
-                                <View style={{flexDirection: 'row', alignItems: 'center'}}>
-                                  <Text style={styles.modelName} numberOfLines={1} ellipsizeMode="tail">DeepFace Model</Text>
-                                  <TouchableOpacity onPress={() => setDeepfaceTooltipVisible(!deepfaceTooltipVisible)} style={styles.infoIconContainer}>
-                                    <InfoIcon style={styles.infoIcon} />
-                                  </TouchableOpacity>
-                                </View>
-                                <Text style={styles.modelSubtitle}>Best for younger face age estimation</Text>
-                              </View>
-                            </View>
-                            <View style={styles.ageContainer}>
-                              <Text style={styles.ageValue}>{face.age_deepface !== null && face.age_deepface !== undefined ? face.age_deepface.toFixed(1) : 'N/A'} years</Text>
-                            </View>
-                          </View>
-                          {deepfaceTooltipVisible && (
-                            <Text style={styles.tooltipText}>Most accurate for general face age estimation.</Text>
-                          )}
-                        </Layout>
-                      )}
-                      {face.age_chatgpt !== null && face.age_chatgpt !== undefined && (
-                        <Layout style={styles.ageResultCard}>
-                          <View style={styles.ageResultRow}>
-                            <View style={styles.modelInfoContainer}>
-                              <Text style={styles.targetIcon}>🧠</Text>
-                              <View style={{flexShrink: 1, minWidth: 0}}>
-                                <View style={{flexDirection: 'row', alignItems: 'center'}}>
-                                  <Text style={styles.modelName} numberOfLines={1} ellipsizeMode="tail">ChatGPT Vision</Text>
-                                  <TouchableOpacity onPress={() => setChatgptTooltipVisible(!chatgptTooltipVisible)} style={styles.infoIconContainer}>
-                                    <InfoIcon style={styles.infoIcon} />
-                                  </TouchableOpacity>
-                                </View>
-                                <Text style={styles.modelSubtitle}>Best for human-like age perception</Text>
-                              </View>
-                            </View>
-                            <View style={styles.ageContainer}>
-                              <Text style={styles.ageValue}>{face.age_chatgpt} years</Text>
-                            </View>
-                          </View>
-                          {chatgptTooltipVisible && (
-                            <Text style={styles.tooltipText}>AI-powered age estimation using human-like perception and reasoning.</Text>
-                          )}
-                        </Layout>
-                      )}
-                    </Layout>
-                  </Layout>
-                </Layout>
-
-                {/* Analysis Summary */}
-                <Layout style={styles.analysisSummary}>
-                  <Text category='label' style={styles.summaryTitle}>MEAN AGE ESTIMATE</Text>
-                  <Layout style={styles.summaryContent}>
+                  <Layout style={{
+                    marginTop: 14,
+                    marginBottom: 14,
+                    backgroundColor: 'white',
+                    borderRadius: 12,
+                    padding: 14,
+                    borderWidth: 0,
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.04,
+                    shadowRadius: 4,
+                    elevation: 1,
+                    width: '100%',
+                    alignSelf: 'center',
+                  }}>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: '#4a5a6a', marginBottom: 8, letterSpacing: 0.2, textAlign: 'left' }}>AGE ESTIMATES</Text>
+                    {/* Model rows */}
                     {(() => {
-                      // Collect all available model ages for this face
-                      const ages = [];
-                      if (face.age_harvard !== null && face.age_harvard !== undefined) ages.push(face.age_harvard);
-                      if (face.age_deepface !== null && face.age_deepface !== undefined) ages.push(face.age_deepface);
-                      if (face.age_chatgpt !== null && face.age_chatgpt !== undefined) ages.push(face.age_chatgpt);
-                      if (ages.length === 0) {
-                        return (
-                          <Layout style={styles.summaryCard}>
-                            <Text category='h6' style={styles.summaryAge}>
-                              No age estimate available
-                            </Text>
-                            <Text category='c1' style={styles.summaryCategory}>
-                              ANALYSIS FAILED • Try a different photo
-                            </Text>
+                      const modelRows = [];
+                      if (face.age_harvard !== null && face.age_harvard !== undefined) modelRows.push({ key: 'harvard', value: face.age_harvard });
+                      if (face.age_deepface !== null && face.age_deepface !== undefined) modelRows.push({ key: 'deepface', value: face.age_deepface });
+                      if (face.age_chatgpt !== null && face.age_chatgpt !== undefined) modelRows.push({ key: 'chatgpt', value: face.age_chatgpt });
+                      // Mean
+                      const ages = modelRows.map(r => r.value);
+                      const mean = ages.length ? (ages.reduce((a, b) => a + b, 0) / ages.length) : null;
+                      return <>
+                        {modelRows.map((row, i) => (
+                          <Layout key={row.key} style={{ marginBottom: i === modelRows.length - 1 ? 0 : 12 }}>
+                            <Layout style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'transparent', minHeight: 36 }}>
+                              <Text style={{ fontSize: 18, marginRight: 8 }}>{MODEL_ICONS[row.key]}</Text>
+                              <Layout style={{ flex: 1 }}>
+                                <Text style={{ fontWeight: '600', fontSize: 14, color: '#223', marginBottom: 1 }}>{MODEL_LABELS[row.key]}</Text>
+                                <Text style={{ fontSize: 11, color: '#7a869a', marginBottom: 2 }}>{MODEL_DESCRIPTIONS[row.key]}</Text>
+                              </Layout>
+                              <Text style={{ fontWeight: 'bold', fontSize: 15 }}>{Math.round(row.value)}<Text style={{ fontSize: 12, color: '#888' }}> yrs</Text></Text>
+                            </Layout>
+                            <View style={{ position: 'relative', height: 7, width: '100%', borderRadius: 4, backgroundColor: '#e6eaf2', overflow: 'hidden', marginTop: 2, marginBottom: 2 }}>
+                              {(() => {
+                                const min = 0, max = 100;
+                                const percent = Math.max(0, Math.min(1, ((row.value - min) / (max - min))));
+                                return percent > 0 ? (
+                                  <LinearGradient
+                                    colors={['#4f8cff', '#4fd1c5']}
+                                    start={{ x: 0, y: 0 }}
+                                    end={{ x: 1, y: 0 }}
+                                    style={{
+                                      position: 'absolute',
+                                      left: 0,
+                                      top: 0,
+                                      width: `${percent * 100}%`,
+                                      height: '100%',
+                                      borderRadius: 4,
+                                      zIndex: 1,
+                                    }}
+                                  />
+                                ) : null;
+                              })()}
+                            </View>
+                            {i !== modelRows.length - 1 && (
+                              <View style={{ height: 1, backgroundColor: '#eee', marginTop: 12, marginBottom: 12, marginLeft: 0 }} />
+                            )}
                           </Layout>
-                        );
-                      }
-                      const meanAge = ages.reduce((a, b) => a + b, 0) / ages.length;
-                      return (
-                        <Layout style={styles.summaryCard}>
-                          <Text category='h6' style={styles.summaryAge}>
-                            {meanAge.toFixed(1)} years
-                          </Text>
-                          <Text category='c1' style={styles.summaryCategory}>
-                            Mean of {ages.length} model{ages.length > 1 ? 's' : ''}
-                          </Text>
-                          <View style={styles.ageIndicator}>
-                            <View style={[styles.ageBar, { width: `${(meanAge / 100) * 100}%` }]} />
+                        ))}
+                        {/* Separator and mean row */}
+                        {mean !== null && (
+                          <View style={{
+                            marginTop: 18,
+                            marginBottom: 4,
+                            backgroundColor: '#e6f0fa',
+                            borderRadius: 10,
+                            padding: 12,
+                            alignItems: 'center',
+                            flexDirection: 'row',
+                            justifyContent: 'center',
+                            gap: 8,
+                            shadowColor: '#4f8cff',
+                            shadowOffset: { width: 0, height: 2 },
+                            shadowOpacity: 0.08,
+                            shadowRadius: 6,
+                            elevation: 2,
+                          }}>
+                            <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#1976d2', marginRight: 8 }}>📊</Text>
+                            <Text style={{ fontSize: 16, fontWeight: '700', color: '#1976d2', marginRight: 8 }}>Mean Age</Text>
+                            <Text style={{ fontSize: 22, fontWeight: 'bold', color: '#1976d2' }}>{Math.round(mean)}<Text style={{ fontSize: 13, color: '#888' }}> yrs</Text></Text>
                           </View>
-                        </Layout>
-                      );
+                        )}
+                      </>;
                     })()}
                   </Layout>
                 </Layout>
+
+                {/* Age Factors */}
+                {face.chatgpt_factors && (
+                  <Layout style={{
+                    marginTop: 14,
+                    marginBottom: 14,
+                    backgroundColor: 'white',
+                    borderRadius: 12,
+                    padding: 14,
+                    borderWidth: 0,
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.04,
+                    shadowRadius: 4,
+                    elevation: 1,
+                    width: '100%',
+                    alignSelf: 'center',
+                  }}>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: '#4a5a6a', marginBottom: 8, letterSpacing: 0.2, textAlign: 'left' }}>AGE FACTORS</Text>
+                    {['skin_texture', 'skin_tone', 'hair', 'facial_volume'].map((factor, i, arr) => {
+                      const f = face.chatgpt_factors[factor];
+                      if (!f) return null;
+                      const percent = Math.max(0, Math.min(1, ((f.age_rating - 0) / 100)));
+                      return (
+                        <Layout key={factor} style={{ marginBottom: i === arr.length - 1 ? 0 : 12 }}>
+                          <Layout style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'transparent', minHeight: 36 }}>
+                            <Text style={{ fontSize: 20, marginRight: 8 }}>{AGE_FACTOR_ICONS[factor]}</Text>
+                            <Layout style={{ flex: 1 }}>
+                              <Text style={{ fontWeight: '600', fontSize: 14, color: '#223', marginBottom: 1 }}>{AGE_FACTOR_LABELS[factor]}</Text>
+                              <Text style={{ fontSize: 11, color: '#7a869a', marginBottom: 2 }}>{f.explanation}</Text>
+                            </Layout>
+                            <Text style={{ fontWeight: 'bold', fontSize: 15, color: '#223', marginLeft: 10, minWidth: 32, textAlign: 'right' }}>{f.age_rating} <Text style={{ fontSize: 11, color: '#7a869a' }}>yrs</Text></Text>
+                          </Layout>
+                          <View style={{ position: 'relative', height: 7, width: '100%', borderRadius: 4, backgroundColor: '#e6eaf2', overflow: 'hidden', marginTop: 2, marginBottom: 2 }}>
+                            <LinearGradient
+                              colors={['#4f8cff', '#4fd1c5']}
+                              start={{ x: 0, y: 0 }}
+                              end={{ x: 1, y: 0 }}
+                              style={{
+                                position: 'absolute',
+                                left: 0,
+                                top: 0,
+                                width: `${percent * 100}%`,
+                                height: '100%',
+                                borderRadius: 4,
+                                zIndex: 1,
+                              }}
+                            />
+                          </View>
+                          {i !== arr.length - 1 && (
+                            <View style={{ height: 1, backgroundColor: '#eee', marginTop: 12, marginBottom: 12, marginLeft: 0 }} />
+                          )}
+                        </Layout>
+                      );
+                    })}
+                  </Layout>
+                )}
               </Layout>
             </Card>
           );
@@ -887,7 +1045,7 @@ function AppContent() {
         )}
       </ScrollView>
 
-      <Layout style={styles.resultsActions}>
+      <Layout style={[styles.resultsActions, { maxWidth: 500, width: '100%', alignSelf: 'center' }]}>
         <Button
           style={styles.shareButton}
           onPress={shareResults}
@@ -924,24 +1082,23 @@ function AppContent() {
         alignItems: 'center',
         minHeight: 20,
       }}>
-        <Layout style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 2 }}>
-          <Text style={{ fontSize: 15, color: apiHealth?.models?.harvard ? '#4CAF50' : '#f44336', fontWeight: 'bold' }}>
-            {apiHealth?.models?.harvard ? '✔' : '✖'}
-          </Text>
-          <Text style={{ fontSize: 12, fontWeight: '600', marginLeft: 3, color: '#222' }}>Harvard</Text>
-        </Layout>
-        <Layout style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 2 }}>
-          <Text style={{ fontSize: 15, color: apiHealth?.models?.deepface ? '#4CAF50' : '#f44336', fontWeight: 'bold' }}>
-            {apiHealth?.models?.deepface ? '✔' : '✖'}
-          </Text>
-          <Text style={{ fontSize: 12, fontWeight: '600', marginLeft: 3, color: '#222' }}>DeepFace</Text>
-        </Layout>
-        <Layout style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 2 }}>
-          <Text style={{ fontSize: 15, color: apiHealth?.models?.chatgpt ? '#4CAF50' : '#f44336', fontWeight: 'bold' }}>
-            {apiHealth?.models?.chatgpt ? '✔' : '✖'}
-          </Text>
-          <Text style={{ fontSize: 12, fontWeight: '600', marginLeft: 3, color: '#222' }}>ChatGPT</Text>
-        </Layout>
+        {['harvard', 'deepface', 'chatgpt'].map((model) => (
+          <Layout key={model} style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 2 }}>
+            {apiHealth === null ? (
+              <>
+                <Spinner size='tiny' status='primary' style={{ width: 15, height: 15 }} />
+                <Text style={{ fontSize: 12, fontWeight: '600', marginLeft: 3, color: '#888' }}>Loading...</Text>
+              </>
+            ) : (
+              <>
+                <Text style={{ fontSize: 15, color: apiHealth?.models?.[model] ? '#4CAF50' : '#f44336', fontWeight: 'bold' }}>
+                  {apiHealth?.models?.[model] ? '✔' : '✖'}
+                </Text>
+                <Text style={{ fontSize: 12, fontWeight: '600', marginLeft: 3, color: '#222' }}>{MODEL_LABELS[model]}</Text>
+              </>
+            )}
+          </Layout>
+        ))}
       </Layout>
     </Layout>
   );
@@ -1218,6 +1375,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginVertical: 24,
     backgroundColor: 'transparent',
+    position: 'relative',
   },
   faceCropImage: {
     width: 200,
@@ -1477,6 +1635,7 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     gap: 15,
     marginTop: 20,
+    paddingHorizontal: 20, // add horizontal padding to match cards
   },
   shareButton: {
     backgroundColor: '#2196f3',
