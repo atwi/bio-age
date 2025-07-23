@@ -26,6 +26,7 @@ from PIL import Image
 import openai
 from dotenv import load_dotenv
 import traceback
+import psutil
 
 # Global variables for lazy loading
 detector = None
@@ -66,6 +67,10 @@ if IS_RAILWAY:
 # Add startup delay for Railway
 if IS_RAILWAY:
     time.sleep(5)  # Give Railway time to initialize
+
+def log_memory_usage(context=""):
+    mem = psutil.Process(os.getpid()).memory_info().rss / 1024 ** 2
+    logger.info(f"[MEMORY] {context} Memory usage: {mem:.2f} MB")
 
 class FaceResult(BaseModel):
     face_id: int
@@ -179,6 +184,7 @@ def load_harvard_model():
                 logger.info(f"Loading Harvard model from: {model_path}")
                 model = tf.keras.models.load_model(model_path)
                 logger.info("✅ Harvard model loaded successfully")
+                log_memory_usage("After Harvard model load")
                 return model
             except Exception as e:
                 logger.warning(f"Failed to load from {model_path}: {e}")
@@ -214,6 +220,7 @@ def load_harvard_model():
                 logger.info(f"Loading Harvard model from runtime download: {MODEL_DIR}")
                 model = tf.keras.models.load_model(MODEL_DIR)
                 logger.info("✅ Harvard model loaded successfully from runtime download")
+                log_memory_usage("After Harvard model load (runtime download)")
                 return model
             else:
                 logger.error("❌ Model directory not found after runtime download")
@@ -229,9 +236,10 @@ def load_harvard_model():
 
 def test_deepface():
     """Test DeepFace initialization"""
+    log_memory_usage("Before DeepFace load")
     try:
         from deepface import DeepFace
-        
+        log_memory_usage("After DeepFace import")
         # Create minimal test image
         test_img = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
         
@@ -242,7 +250,7 @@ def test_deepface():
             enforce_detection=False,
             silent=True
         )
-        
+        log_memory_usage("After DeepFace analyze test")
         # Clean up
         del test_img, result
         gc.collect()
@@ -428,7 +436,7 @@ async def api_health_check():
 
 @app.post("/api/analyze-face", response_model=AnalyzeResponse)
 async def analyze_face(file: UploadFile = File(...)):
-    """Analyze face with lazy model loading"""
+    log_memory_usage("Before analyze_face")
     try:
         # Lazy load models on first request
         if not lazy_load_models():
@@ -578,6 +586,7 @@ async def analyze_face(file: UploadFile = File(...)):
                 logger.error(f"Error processing face {i}: {e}\n{traceback.format_exc()}")
                 continue
         
+        log_memory_usage("After analyze_face")
         return AnalyzeResponse(
             success=True,
             faces=results,
