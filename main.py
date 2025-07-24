@@ -27,6 +27,8 @@ import openai
 from dotenv import load_dotenv
 import traceback
 import psutil
+import mediapipe as mp
+import cv2
 
 # Global variables for lazy loading
 detector = None
@@ -384,6 +386,41 @@ def estimate_age_chatgpt(image_base64: str) -> dict:
         result['error'] = str(e)
         return result
 
+def draw_facemesh(image_bytes):
+    nparr = np.frombuffer(image_bytes, np.uint8)
+    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    overlay = img.copy()
+    mp_face_mesh = mp.solutions.face_mesh
+    try:
+        with mp_face_mesh.FaceMesh(static_image_mode=True) as face_mesh:
+            results = face_mesh.process(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+            if results.multi_face_landmarks:
+                for face_landmarks in results.multi_face_landmarks:
+                    # Draw only dots, with blue/green gradient and opacity
+                    n_points = len(face_landmarks.landmark)
+                    for idx, landmark in enumerate(face_landmarks.landmark):
+                        x = int(landmark.x * img.shape[1])
+                        y = int(landmark.y * img.shape[0])
+                        # Gradient from blue (#4f8cff) to green (#4fd1c5)
+                        t = idx / n_points
+                        r = int((0x4f * (1-t)) + (0x4f * t))
+                        g = int((0x8c * (1-t)) + (0xd1 * t))
+                        b = int((0xff * (1-t)) + (0xc5 * t))
+                        color = (b, g, r, 180)  # OpenCV uses BGR, alpha=180/255
+                        # Draw semi-transparent dot
+                        cv2.circle(overlay, (x, y), 2, (b, g, r), -1, lineType=cv2.LINE_AA)
+                    # Blend overlay with original for opacity
+                img = cv2.addWeighted(overlay, 0.7, img, 0.3, 0)
+        _, buffer = cv2.imencode('.jpg', img)
+        encoded = base64.b64encode(buffer).decode('utf-8')
+        return encoded
+    except Exception as e:
+        logger.error(f"FaceMesh error: {e}")
+        blank = np.zeros_like(img)
+        _, buffer = cv2.imencode('.jpg', blank)
+        encoded = base64.b64encode(buffer).decode('utf-8')
+        return encoded
+
 # FastAPI app without startup model loading
 app = FastAPI(
     title="Bio Age Estimator API",
@@ -596,6 +633,20 @@ async def analyze_face(file: UploadFile = File(...)):
     except Exception as e:
         logger.error(f"Error analyzing face: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/facemesh-overlay")
+async def facemesh_overlay(file: UploadFile = File(...)):
+    try:
+        image_bytes = await file.read()
+        result = draw_facemesh(image_bytes)
+        return {"image_base64": result}
+    except Exception as e:
+        logger.error(f"/facemesh-overlay error: {e}")
+        # Return a blank image or error placeholder
+        blank = np.zeros((256, 256, 3), dtype=np.uint8)
+        _, buffer = cv2.imencode('.jpg', blank)
+        encoded = base64.b64encode(buffer).decode('utf-8')
+        return {"image_base64": encoded}
 
 # Mount static files for React Native web build
 web_build_path = "FaceAgeApp/dist"

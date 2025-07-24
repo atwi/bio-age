@@ -19,7 +19,8 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as Sharing from 'expo-sharing';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
-import { LinearGradient } from 'expo-linear-gradient';
+import * as FileSystem from 'expo-file-system';
+import Svg, { Ellipse, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 
 // UI Kitten imports
 import * as eva from '@eva-design/eva';
@@ -61,6 +62,15 @@ const getApiBaseUrl = () => {
 };
 
 const API_BASE_URL = getApiBaseUrl();
+
+// Helper to get base backend URL (without /api)
+const getBackendBaseUrl = () => {
+  const apiUrl = getApiBaseUrl();
+  if (apiUrl.endsWith('/api')) {
+    return apiUrl.slice(0, -4);
+  }
+  return apiUrl;
+};
 
 // Custom icons for UI Kitten
 const CameraIcon = (props) => (
@@ -146,6 +156,8 @@ function AppContent() {
   const [chatgptTooltipVisible, setChatgptTooltipVisible] = useState(false);
   const [showApiTooltip, setShowApiTooltip] = useState(false);
   const [expandedModel, setExpandedModel] = useState(null);
+  const [faceMeshOverlays, setFaceMeshOverlays] = useState({});
+  const [faceMeshOverlayUris, setFaceMeshOverlayUris] = useState({});
 
   // Request permissions on mount
   useEffect(() => {
@@ -531,7 +543,85 @@ function AppContent() {
     return height;
   };
 
-  // Web camera view for browsers
+  const saveBase64ToFile = async (base64, faceIndex) => {
+    try {
+      const fileUri = `${FileSystem.cacheDirectory}facemesh_overlay_${faceIndex}.jpg`;
+      await FileSystem.writeAsStringAsync(fileUri, base64, { encoding: FileSystem.EncodingType.Base64 });
+      return fileUri;
+    } catch (e) {
+      return null;
+    }
+  };
+
+  const fetchFaceMeshOverlay = async (faceCropBase64, faceIndex) => {
+    try {
+      // Convert base64 to blob
+      const byteCharacters = atob(faceCropBase64);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'image/jpeg' });
+      const formData = new FormData();
+      formData.append('file', blob, 'face.jpg');
+      const response = await fetch(`${API_BASE_URL.replace('/api', '')}/facemesh-overlay`, {
+        method: 'POST',
+        body: formData,
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setFaceMeshOverlays(prev => ({ ...prev, [faceIndex]: data.image_base64 }));
+        // Save to file and set URI
+        const fileUri = await saveBase64ToFile(data.image_base64, faceIndex);
+        setFaceMeshOverlayUris(prev => ({ ...prev, [faceIndex]: fileUri }));
+      } else {
+        setFaceMeshOverlays(prev => ({ ...prev, [faceIndex]: null }));
+        setFaceMeshOverlayUris(prev => ({ ...prev, [faceIndex]: null }));
+      }
+    } catch (e) {
+      setFaceMeshOverlays(prev => ({ ...prev, [faceIndex]: null }));
+      setFaceMeshOverlayUris(prev => ({ ...prev, [faceIndex]: null }));
+    }
+  };
+
+  useEffect(() => {
+    if (results && results.faces) {
+      results.faces.forEach((face, i) => {
+        if (face.face_crop_base64) {
+          fetchFaceMeshOverlay(face.face_crop_base64, i);
+        }
+      });
+    }
+  }, [results]);
+
+  // Face guide overlay component (modern, subtle, no eyes)
+  const FaceGuideOverlay = ({ width = 200, height = 260 }) => (
+    <Svg
+      width={width}
+      height={height}
+      style={{ position: 'absolute', left: '50%', top: '50%', transform: [{ translateX: -width/2 }, { translateY: -height/2 }], zIndex: 10 }}
+      pointerEvents="none"
+    >
+      <Defs>
+        <SvgLinearGradient id="faceGradient" x1="0" y1="0" x2={width} y2={height} gradientUnits="userSpaceOnUse">
+          <Stop offset="0%" stopColor="#4f8cff" stopOpacity="1" />
+          <Stop offset="100%" stopColor="#4fd1c5" stopOpacity="1" />
+        </SvgLinearGradient>
+      </Defs>
+      <Ellipse
+        cx={width/2}
+        cy={height/2}
+        rx={width*0.38}
+        ry={height*0.46}
+        stroke="url(#faceGradient)"
+        strokeWidth={4}
+        fill="rgba(79, 216, 197, 0.13)"
+      />
+    </Svg>
+  );
+
+  // Only show overlay if camera is active and permissions are granted
   if (showWebCamera && Platform.OS === 'web') {
     return (
       <SafeAreaView style={styles.container}>
@@ -539,13 +629,17 @@ function AppContent() {
           <Card style={styles.webCameraCard}>
             <Text category='h6' style={styles.webCameraTitle}>📷 Take Photo</Text>
             <Layout style={styles.webCameraContainer}>
+              <View style={{ position: 'relative', width: 400, height: 300, alignItems: 'center', justifyContent: 'center' }}>
               <video
                 ref={videoRef}
-                style={styles.video}
+                style={{ ...styles.video, transform: 'scaleX(-1)' }}
                 autoPlay
                 playsInline
                 muted
               />
+                {/* Only show overlay when camera is active */}
+                <FaceGuideOverlay width={200} height={260} />
+              </View>
               <canvas
                 ref={canvasRef}
                 style={{ display: 'none' }}
@@ -646,7 +740,7 @@ function AppContent() {
             <TouchableOpacity onPress={() => setExpandedModel(expandedModel === model.key ? null : model.key)}>
               <Text style={{ color: '#2e7be4', marginTop: 6, fontSize: 12 }}>
                 {expandedModel === model.key ? 'Show less' : 'Show more'}
-              </Text>
+        </Text>
             </TouchableOpacity>
           </View>
         ))}
@@ -777,7 +871,7 @@ function AppContent() {
                   ]
                 }
               ]}>
-                <LinearGradient
+                <SvgLinearGradient
                   colors={['#4f8cff', '#4fd1c5']}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
@@ -863,11 +957,11 @@ function AppContent() {
                           justifyContent: 'center',
                           alignItems: 'center',
                         }}>
-                          <Image
-                            source={{ uri: `data:image/jpeg;base64,${face.face_crop_base64}` }}
+                        <Image
+                            source={faceMeshOverlayUris[index] ? { uri: faceMeshOverlayUris[index] } : { uri: `data:image/jpeg;base64,${face.face_crop_base64}` }}
                             style={{ width: '100%', height: '100%', borderRadius: 20 }}
-                            resizeMode="cover"
-                          />
+                          resizeMode="cover"
+                        />
                         </View>
                         <View style={styles.faceOverlay}>
                           <View style={styles.detectionIndicator}>
@@ -879,71 +973,71 @@ function AppContent() {
                   </Layout>
 
                   {/* Age Estimation Results */}
-                  <Layout style={{
+                    <Layout style={{
                     marginTop: 14,
                     marginBottom: 14,
-                    backgroundColor: 'white',
-                    borderRadius: 12,
-                    padding: 14,
-                    borderWidth: 0,
-                    shadowColor: '#000',
-                    shadowOffset: { width: 0, height: 2 },
-                    shadowOpacity: 0.04,
-                    shadowRadius: 4,
-                    elevation: 1,
-                    width: '100%',
-                    alignSelf: 'center',
-                  }}>
-                    <Text style={{ fontSize: 13, fontWeight: '700', color: '#4a5a6a', marginBottom: 8, letterSpacing: 0.2, textAlign: 'left' }}>AGE ESTIMATES</Text>
-                    {/* Model rows */}
-                    {(() => {
-                      const modelRows = [];
-                      if (face.age_harvard !== null && face.age_harvard !== undefined) modelRows.push({ key: 'harvard', value: face.age_harvard });
-                      if (face.age_deepface !== null && face.age_deepface !== undefined) modelRows.push({ key: 'deepface', value: face.age_deepface });
-                      if (face.age_chatgpt !== null && face.age_chatgpt !== undefined) modelRows.push({ key: 'chatgpt', value: face.age_chatgpt });
-                      // Mean
-                      const ages = modelRows.map(r => r.value);
-                      const mean = ages.length ? (ages.reduce((a, b) => a + b, 0) / ages.length) : null;
-                      return <>
-                        {modelRows.map((row, i) => (
-                          <Layout key={row.key} style={{ marginBottom: i === modelRows.length - 1 ? 0 : 12 }}>
-                            <Layout style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'transparent', minHeight: 36 }}>
-                              <Text style={{ fontSize: 18, marginRight: 8 }}>{MODEL_ICONS[row.key]}</Text>
-                              <Layout style={{ flex: 1 }}>
-                                <Text style={{ fontWeight: '600', fontSize: 14, color: '#223', marginBottom: 1 }}>{MODEL_LABELS[row.key]}</Text>
-                                <Text style={{ fontSize: 11, color: '#7a869a', marginBottom: 2 }}>{MODEL_DESCRIPTIONS[row.key]}</Text>
+                      backgroundColor: 'white',
+                      borderRadius: 12,
+                      padding: 14,
+                      borderWidth: 0,
+                      shadowColor: '#000',
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 0.04,
+                      shadowRadius: 4,
+                      elevation: 1,
+                      width: '100%',
+                      alignSelf: 'center',
+                    }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: '#4a5a6a', marginBottom: 8, letterSpacing: 0.2, textAlign: 'left' }}>AGE ESTIMATES</Text>
+                      {/* Model rows */}
+                      {(() => {
+                        const modelRows = [];
+                        if (face.age_harvard !== null && face.age_harvard !== undefined) modelRows.push({ key: 'harvard', value: face.age_harvard });
+                        if (face.age_deepface !== null && face.age_deepface !== undefined) modelRows.push({ key: 'deepface', value: face.age_deepface });
+                        if (face.age_chatgpt !== null && face.age_chatgpt !== undefined) modelRows.push({ key: 'chatgpt', value: face.age_chatgpt });
+                        // Mean
+                        const ages = modelRows.map(r => r.value);
+                        const mean = ages.length ? (ages.reduce((a, b) => a + b, 0) / ages.length) : null;
+                        return <>
+                          {modelRows.map((row, i) => (
+                            <Layout key={row.key} style={{ marginBottom: i === modelRows.length - 1 ? 0 : 12 }}>
+                              <Layout style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'transparent', minHeight: 36 }}>
+                                <Text style={{ fontSize: 18, marginRight: 8 }}>{MODEL_ICONS[row.key]}</Text>
+                                <Layout style={{ flex: 1 }}>
+                                  <Text style={{ fontWeight: '600', fontSize: 14, color: '#223', marginBottom: 1 }}>{MODEL_LABELS[row.key]}</Text>
+                                  <Text style={{ fontSize: 11, color: '#7a869a', marginBottom: 2 }}>{MODEL_DESCRIPTIONS[row.key]}</Text>
+                                </Layout>
+                                <Text style={{ fontWeight: 'bold', fontSize: 15 }}>{Math.round(row.value)}<Text style={{ fontSize: 12, color: '#888' }}> yrs</Text></Text>
                               </Layout>
-                              <Text style={{ fontWeight: 'bold', fontSize: 15 }}>{Math.round(row.value)}<Text style={{ fontSize: 12, color: '#888' }}> yrs</Text></Text>
-                            </Layout>
                             <View style={{ position: 'relative', height: 7, width: '100%', borderRadius: 4, backgroundColor: '#e6eaf2', overflow: 'hidden', marginTop: 2, marginBottom: 2 }}>
-                              {(() => {
-                                const min = 0, max = 100;
-                                const percent = Math.max(0, Math.min(1, ((row.value - min) / (max - min))));
-                                return percent > 0 ? (
-                                  <LinearGradient
-                                    colors={['#4f8cff', '#4fd1c5']}
-                                    start={{ x: 0, y: 0 }}
-                                    end={{ x: 1, y: 0 }}
-                                    style={{
-                                      position: 'absolute',
-                                      left: 0,
-                                      top: 0,
-                                      width: `${percent * 100}%`,
-                                      height: '100%',
-                                      borderRadius: 4,
+                                  {(() => {
+                                    const min = 0, max = 100;
+                                    const percent = Math.max(0, Math.min(1, ((row.value - min) / (max - min))));
+                                    return percent > 0 ? (
+                                      <SvgLinearGradient
+                                        colors={['#4f8cff', '#4fd1c5']}
+                                        start={{ x: 0, y: 0 }}
+                                        end={{ x: 1, y: 0 }}
+                                        style={{
+                                          position: 'absolute',
+                                          left: 0,
+                                          top: 0,
+                                          width: `${percent * 100}%`,
+                                          height: '100%',
+                                          borderRadius: 4,
                                       zIndex: 1,
-                                    }}
-                                  />
-                                ) : null;
-                              })()}
-                            </View>
-                            {i !== modelRows.length - 1 && (
+                                        }}
+                                      />
+                                    ) : null;
+                                  })()}
+                              </View>
+                              {i !== modelRows.length - 1 && (
                               <View style={{ height: 1, backgroundColor: '#eee', marginTop: 12, marginBottom: 12, marginLeft: 0 }} />
-                            )}
-                          </Layout>
-                        ))}
-                        {/* Separator and mean row */}
-                        {mean !== null && (
+                              )}
+                            </Layout>
+                          ))}
+                          {/* Separator and mean row */}
+                          {mean !== null && (
                           <View style={{
                             marginTop: 18,
                             marginBottom: 4,
@@ -964,9 +1058,9 @@ function AppContent() {
                             <Text style={{ fontSize: 16, fontWeight: '700', color: '#1976d2', marginRight: 8 }}>Mean Age</Text>
                             <Text style={{ fontSize: 22, fontWeight: 'bold', color: '#1976d2' }}>{Math.round(mean)}<Text style={{ fontSize: 13, color: '#888' }}> yrs</Text></Text>
                           </View>
-                        )}
-                      </>;
-                    })()}
+                          )}
+                        </>;
+                      })()}
                   </Layout>
                 </Layout>
 
@@ -1003,20 +1097,20 @@ function AppContent() {
                             <Text style={{ fontWeight: 'bold', fontSize: 15, color: '#223', marginLeft: 10, minWidth: 32, textAlign: 'right' }}>{f.age_rating} <Text style={{ fontSize: 11, color: '#7a869a' }}>yrs</Text></Text>
                           </Layout>
                           <View style={{ position: 'relative', height: 7, width: '100%', borderRadius: 4, backgroundColor: '#e6eaf2', overflow: 'hidden', marginTop: 2, marginBottom: 2 }}>
-                            <LinearGradient
-                              colors={['#4f8cff', '#4fd1c5']}
-                              start={{ x: 0, y: 0 }}
-                              end={{ x: 1, y: 0 }}
-                              style={{
-                                position: 'absolute',
-                                left: 0,
-                                top: 0,
-                                width: `${percent * 100}%`,
-                                height: '100%',
-                                borderRadius: 4,
+                                <SvgLinearGradient
+                                  colors={['#4f8cff', '#4fd1c5']}
+                                  start={{ x: 0, y: 0 }}
+                                  end={{ x: 1, y: 0 }}
+                                  style={{
+                                    position: 'absolute',
+                                    left: 0,
+                                    top: 0,
+                                    width: `${percent * 100}%`,
+                                    height: '100%',
+                                    borderRadius: 4,
                                 zIndex: 1,
-                              }}
-                            />
+                                  }}
+                                />
                           </View>
                           {i !== arr.length - 1 && (
                             <View style={{ height: 1, backgroundColor: '#eee', marginTop: 12, marginBottom: 12, marginLeft: 0 }} />
