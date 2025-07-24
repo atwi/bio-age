@@ -121,7 +121,7 @@ const MODEL_LABELS = {
 };
 
 const MODEL_DESCRIPTIONS = {
-  harvard: 'Best for clinical/biological age estimation, people over 40',
+  harvard: 'Best for clinical/biological age estimation, people >40',
   deepface: 'Best for general face age estimation',
   chatgpt: 'Best for human-like age perception',
 };
