@@ -24,3 +24,4 @@ openai
 # Railway deployment optimizations
 # Removed heavy dependencies that might cause memory issues
 # Harvard model loading is optional via LOAD_HARVARD_MODEL env varpsutil
+psutil
