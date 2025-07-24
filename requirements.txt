@@ -12,12 +12,12 @@ mtcnn==1.0.0
 # Image Processing - lightweight versions
 opencv-python-headless==4.10.0.82
 pillow==10.3.0
-numpy==1.24.3
+numpy
 
 # Utilities
 requests==2.31.0
 gdown==5.1.0
-typing-extensions==4.5.0
+typing-extensions
 python-dotenv==1.0.0
 openai>=1.6.0
 
