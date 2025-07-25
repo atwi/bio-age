@@ -141,17 +141,32 @@ const MODEL_DESCRIPTIONS = {
 };
 
 const AppHeader = React.memo(function AppHeader() {
+  const openEmail = () => {
+    const emailUrl = 'mailto:alexthorburnwinsor@gmail.com';
+    if (Platform.OS === 'web') {
+      window.open(emailUrl, '_self');
+    } else {
+      // For mobile, you might want to use Linking.openURL
+      console.log('Open email: alexthorburnwinsor@gmail.com');
+      // TODO: Add Linking.openURL(emailUrl) when you import Linking
+    }
+  };
+
   const ContactAction = () => (
     <TopNavigationAction
       icon={(props) => <Icon {...props} name='email-outline' />} 
-      onPress={() => window.location.href = 'mailto:alexthorburnwinsor@gmail.com'}
+      onPress={openEmail}
     />
   );
   return (
     <TopNavigation
       alignment='center'
       title={() => (
-        <TouchableOpacity style={styles.headerRow} onPress={() => window.location.href = '/'}>
+        <TouchableOpacity style={styles.headerRow} onPress={() => {
+          if (Platform.OS === 'web') {
+            window.location.href = '/';
+          }
+        }}>
           <Image 
             source={logo} 
             style={styles.headerLogo} 
@@ -165,6 +180,46 @@ const AppHeader = React.memo(function AppHeader() {
     />
   );
 });
+
+const AppFooter = ({ onShowModal }) => {
+  const showModal = (type) => {
+    onShowModal(type);
+  };
+
+  const openEmail = () => {
+    const emailUrl = 'mailto:alexthorburnwinsor@gmail.com';
+    if (Platform.OS === 'web') {
+      window.open(emailUrl, '_self');
+    } else {
+      // For mobile, you might want to use Linking.openURL
+      console.log('Open email: alexthorburnwinsor@gmail.com');
+      // TODO: Add Linking.openURL(emailUrl) when you import Linking
+    }
+  };
+
+  return (
+    <Layout style={styles.footer}>
+      <Layout style={styles.footerContent}>
+        <Layout style={styles.footerLinks}>
+          <TouchableOpacity onPress={() => showModal('privacy')}>
+            <Text style={styles.footerLink}>Privacy Policy</Text>
+          </TouchableOpacity>
+          <Text style={styles.footerSeparator}>•</Text>
+          <TouchableOpacity onPress={() => showModal('terms')}>
+            <Text style={styles.footerLink}>Terms of Service</Text>
+          </TouchableOpacity>
+          <Text style={styles.footerSeparator}>•</Text>
+          <TouchableOpacity onPress={openEmail}>
+            <Text style={styles.footerLink}>Contact</Text>
+          </TouchableOpacity>
+        </Layout>
+        <Text style={styles.footerCopyright}>
+          © 2025 TrueAge. Built with Harvard FaceAge, DeepFace & OpenAI.
+        </Text>
+      </Layout>
+    </Layout>
+  );
+};
 
 function AppContent() {
   const [currentStep, setCurrentStep] = useState(1); // 1: Upload, 2: Analyzing, 3: Results
@@ -187,6 +242,8 @@ function AppContent() {
   const [showApiTooltip, setShowApiTooltip] = useState(false);
   const [expandedModel, setExpandedModel] = useState(null);
   const [faceMeshOverlays, setFaceMeshOverlays] = useState({});
+  const [modalContent, setModalContent] = useState(null);
+  const [modalVisible, setModalVisible] = useState(false);
 
   // Request permissions on mount
   useEffect(() => {
@@ -749,6 +806,87 @@ function AppContent() {
     }
   };
 
+  const getModalContent = (type) => {
+    switch(type) {
+      case 'privacy':
+        return (
+          <>
+            <Text category="h6" style={styles.modalTitle}>Privacy Policy</Text>
+            <Text style={styles.modalText}>
+              <Text style={styles.modalSectionTitle}>Data Collection{'\n'}</Text>
+              TrueAge processes photos you upload solely for age estimation. We do not store your images permanently on our servers.{'\n\n'}
+              
+              <Text style={styles.modalSectionTitle}>How We Use Your Data{'\n'}</Text>
+              • Photos are processed by AI models (Harvard FaceAge, DeepFace, OpenAI) to estimate age{'\n'}
+              • Images are temporarily stored during processing and deleted afterward{'\n'}
+              • No personal information is collected or stored{'\n\n'}
+              
+              <Text style={styles.modalSectionTitle}>Data Security{'\n'}</Text>
+              All data transmission is encrypted. We use industry-standard security measures to protect your information during processing.{'\n\n'}
+              
+              <Text style={styles.modalSectionTitle}>Contact{'\n'}</Text>
+              For privacy questions, contact: alexthorburnwinsor@gmail.com
+            </Text>
+          </>
+        );
+      case 'terms':
+        return (
+          <>
+            <Text category="h6" style={styles.modalTitle}>Terms of Service</Text>
+            <Text style={styles.modalText}>
+              <Text style={styles.modalSectionTitle}>Acceptance of Terms{'\n'}</Text>
+              By using TrueAge, you agree to these terms of service.{'\n\n'}
+              
+              <Text style={styles.modalSectionTitle}>Use of Service{'\n'}</Text>
+              • TrueAge provides age estimation for entertainment and informational purposes{'\n'}
+              • Results are estimates and not medical or legal advice{'\n'}
+              • You must own or have permission to upload photos you submit{'\n\n'}
+              
+              <Text style={styles.modalSectionTitle}>Limitations{'\n'}</Text>
+              Age estimates are provided "as is" without warranty. Results may vary and should not be used for official identification or medical purposes.{'\n\n'}
+              
+              <Text style={styles.modalSectionTitle}>Contact{'\n'}</Text>
+              For questions about these terms, contact: alexthorburnwinsor@gmail.com
+            </Text>
+          </>
+        );
+      default:
+        return null;
+    }
+  };
+
+  const renderContentModal = () => {
+    const content = (
+      <Layout style={styles.infoModalCard}>
+        <TouchableOpacity
+          style={styles.closeIconContainer}
+          onPress={() => setModalVisible(false)}
+          activeOpacity={0.7}
+        >
+          <Icon name="close" fill="#888" style={styles.closeIcon} />
+        </TouchableOpacity>
+        {getModalContent(modalContent)}
+      </Layout>
+    );
+    if (Platform.OS === 'web') {
+      return modalVisible ? (
+        <View style={styles.webModalOverlay}>
+          {content}
+        </View>
+      ) : null;
+    } else {
+      return (
+        <Modal
+          visible={modalVisible}
+          backdropStyle={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+          onBackdropPress={() => setModalVisible(false)}
+        >
+          {content}
+        </Modal>
+      );
+    }
+  };
+
   // Step 1: Upload or Take Photo
   const renderStep1 = () => (
     <ScrollView contentContainerStyle={styles.mainContainer}>
@@ -795,82 +933,76 @@ function AppContent() {
           </Text>
         </TouchableOpacity>
       </Text>
+      <AppFooter onShowModal={(contentType) => { setModalContent(contentType); setModalVisible(true); }} />
     </ScrollView>
   );
 
   // Step 2: Analyzing Photo
   const renderStep2 = () => (
-    <ScrollView contentContainerStyle={styles.resultsScrollViewContent}>
-      <Layout style={[{ maxWidth: MAIN_MAX_WIDTH, width: '100%', alignSelf: 'center' }]}> 
-        <Layout style={styles.headerContainer}>
-          <Text category='h4' style={styles.stepTitle}>🔍 Analyzing Photo</Text>
-          <Text category='s1' style={styles.stepSubtitle}>
-            Please wait while our models analyze your photo...
+    <ScrollView contentContainerStyle={styles.analyzingPageContent}>
+      <Layout style={[styles.contentContainer, { minHeight: 0, maxHeight: undefined, justifyContent: 'center', alignItems: 'center' }]}> 
+        <Layout style={[styles.analyzingImageContainer, { width: ANALYZE_IMAGE_SIZE, height: ANALYZE_IMAGE_SIZE }]}> 
+          {selectedImage && (
+            <Image 
+              source={{ uri: selectedImage.uri }} 
+              style={{
+                width: ANALYZE_IMAGE_SIZE,
+                height: ANALYZE_IMAGE_SIZE,
+                borderRadius: 20,
+              }}
+              resizeMode="cover"
+            />
+          )}
+          <View style={[styles.scanOverlay, { width: ANALYZE_IMAGE_SIZE, height: ANALYZE_IMAGE_SIZE }]}> 
+            <Animated.View style={[
+              {
+                position: 'absolute',
+                left: '50%',
+                width: ANALYZE_IMAGE_SIZE * 0.95,
+                height: 6,
+                borderRadius: 3,
+                shadowColor: '#4f8cff',
+                shadowOffset: { width: 0, height: 0 },
+                shadowOpacity: 0.5,
+                shadowRadius: 12,
+                elevation: 8,
+                opacity: scanLineOpacity,
+                transform: [
+                  { translateX: -(ANALYZE_IMAGE_SIZE * 0.95) / 2 },
+                  {
+                    translateY: scanLinePosition.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, ANALYZE_IMAGE_SIZE - 6],
+                    })
+                  }
+                ]
+              }
+            ]}>
+              <LinearGradient
+                colors={['#4f8cff', '#4fd1c5']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={{ width: '100%', height: '100%', borderRadius: 3 }}
+              />
+            </Animated.View>
+            {/* Brackets inset to match border radius visually */}
+            <View style={[styles.scanCornerTopLeft, { top: 20, left: 20 }]} />
+            <View style={[styles.scanCornerTopRight, { top: 20, right: 20 }]} />
+            <View style={[styles.scanCornerBottomLeft, { bottom: 20, left: 20 }]} />
+            <View style={[styles.scanCornerBottomRight, { bottom: 20, right: 20 }]} />
+          </View>
+        </Layout>
+        <Layout style={styles.loadingContainer}>
+          <Spinner size='large' />
+          <Text category='h6' style={styles.loadingText}>
+            Detecting faces and analyzing age...
+          </Text>
+          <Text category='c1' style={styles.loadingSubtext}>
+            Using Harvard FaceAge, DeepFace + OpenAI models
           </Text>
         </Layout>
-        <Layout style={[styles.contentContainer, { minHeight: 0, maxHeight: undefined, justifyContent: 'center', alignItems: 'center' }]}> 
-          {selectedImage && (
-            <Layout style={[styles.analyzingImageContainer, { width: ANALYZE_IMAGE_SIZE, height: ANALYZE_IMAGE_SIZE }]}> 
-              <Image 
-                source={{ uri: selectedImage.uri }} 
-                style={{
-                  width: ANALYZE_IMAGE_SIZE,
-                  height: ANALYZE_IMAGE_SIZE,
-                  borderRadius: 20,
-                }}
-                resizeMode="cover"
-              />
-              <View style={[styles.scanOverlay, { width: ANALYZE_IMAGE_SIZE, height: ANALYZE_IMAGE_SIZE }]}> 
-                <Animated.View style={[
-                  {
-                    position: 'absolute',
-                    left: '50%',
-                    width: ANALYZE_IMAGE_SIZE * 0.95,
-                    height: 6,
-                    borderRadius: 3,
-                    shadowColor: '#4f8cff',
-                    shadowOffset: { width: 0, height: 0 },
-                    shadowOpacity: 0.5,
-                    shadowRadius: 12,
-                    elevation: 8,
-                    opacity: scanLineOpacity,
-                    transform: [
-                      { translateX: -(ANALYZE_IMAGE_SIZE * 0.95) / 2 },
-                      {
-                        translateY: scanLinePosition.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [0, ANALYZE_IMAGE_SIZE - 6],
-                        })
-                      }
-                    ]
-                  }
-                ]}>
-                  <LinearGradient
-                    colors={['#4f8cff', '#4fd1c5']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={{ width: '100%', height: '100%', borderRadius: 3 }}
-                  />
-                </Animated.View>
-                {/* Brackets inset to match border radius visually */}
-                <View style={[styles.scanCornerTopLeft, { top: 20, left: 20 }]} />
-                <View style={[styles.scanCornerTopRight, { top: 20, right: 20 }]} />
-                <View style={[styles.scanCornerBottomLeft, { bottom: 20, left: 20 }]} />
-                <View style={[styles.scanCornerBottomRight, { bottom: 20, right: 20 }]} />
-              </View>
-            </Layout>
-          )}
-          <Layout style={styles.loadingContainer}>
-            <Spinner size='large' />
-            <Text category='h6' style={styles.loadingText}>
-              Detecting faces and analyzing age...
-            </Text>
-            <Text category='c1' style={styles.loadingSubtext}>
-              Using Harvard FaceAge, DeepFace + OpenAI models
-            </Text>
-          </Layout>
-        </Layout>
       </Layout>
+      <AppFooter onShowModal={(contentType) => { setModalContent(contentType); setModalVisible(true); }} />
     </ScrollView>
   );
 
@@ -1129,6 +1261,7 @@ function AppContent() {
             Try Another Photo
           </Button>
         </Layout>
+        <AppFooter onShowModal={(contentType) => { setModalContent(contentType); setModalVisible(true); }} />
       </Layout>
     </ScrollView>
   );
@@ -1179,6 +1312,7 @@ function AppContent() {
         {currentStep === 3 && renderStep3()}
       </Layout>
       {renderInfoModal()}
+      {renderContentModal()}
     </SafeAreaView>
   );
 }
@@ -1321,7 +1455,8 @@ const styles = StyleSheet.create({
     height: 18,
     borderTopWidth: 3,
     borderLeftWidth: 3,
-    borderColor: '#3366FF',
+    borderColor: '#4f8cff',
+    opacity: 0.8,
     borderTopLeftRadius: 8,
 },
   scanCornerTopRight: {
@@ -1330,7 +1465,8 @@ const styles = StyleSheet.create({
     height: 18,
     borderTopWidth: 3,
     borderRightWidth: 3,
-    borderColor: '#3366FF',
+    borderColor: '#4f8cff',
+    opacity: 0.8,
     borderTopRightRadius: 8,
 },
   scanCornerBottomLeft: {
@@ -1339,7 +1475,8 @@ const styles = StyleSheet.create({
     height: 18,
     borderBottomWidth: 3,
     borderLeftWidth: 3,
-    borderColor: '#3366FF',
+    borderColor: '#4f8cff',
+    opacity: 0.8,
     borderBottomLeftRadius: 8,
 },
   scanCornerBottomRight: {
@@ -1348,7 +1485,8 @@ const styles = StyleSheet.create({
     height: 18,
     borderBottomWidth: 3,
     borderRightWidth: 3,
-    borderColor: '#3366FF',
+    borderColor: '#4f8cff',
+    opacity: 0.8,
     borderBottomRightRadius: 8,
 },
 
@@ -1370,6 +1508,11 @@ const styles = StyleSheet.create({
   resultCard: {
     marginBottom: 15,
     borderRadius: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   singleFaceCard: {
     shadowOpacity: 0,
@@ -1846,9 +1989,61 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'flex-start',
-    minHeight: '100%',
+    minHeight: height,
     backgroundColor: '#fff',
     width: '100%',
+  },
+  analyzingPageContent: {
+    flexGrow: 1,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: height - 160, // Account for header height, safe areas, and iOS-specific elements
+    backgroundColor: '#fff',
+    width: '100%',
+  },
+  footer: {
+    paddingVertical: 24,
+    paddingHorizontal: 20,
+  },
+  footerContent: {
+    maxWidth: MAIN_MAX_WIDTH,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  footerLinks: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  footerLink: {
+    color: '#3366FF',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  footerSeparator: {
+    color: '#666',
+    marginHorizontal: 8,
+  },
+  footerCopyright: {
+    color: '#666',
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  modalTitle: {
+    fontWeight: 'bold',
+    marginBottom: 16,
+    fontSize: 18,
+  },
+  modalText: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#333',
+  },
+  modalSectionTitle: {
+    fontWeight: 'bold',
+    fontSize: 15,
   },
 });
 
