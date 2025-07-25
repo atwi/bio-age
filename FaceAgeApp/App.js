@@ -710,7 +710,7 @@ function AppContent() {
           💡 What is Facial Age Estimation?
         </Text>
         <Text appearance="hint" style={{ marginBottom: 12 }}>
-          This app uses deep learning models to estimate your biological age based on facial features.
+          TrueAge uses deep learning models trained on tens of thousands of real people to estimate your biological age based on a picture of your face.
         </Text>
         {modelDetails.map(model => (
           <View key={model.key} style={{ marginBottom: 18 }}>
@@ -755,7 +755,7 @@ function AppContent() {
       <Text category='h1' style={{ fontWeight: 'bold', textAlign: 'center', fontSize: 28, marginTop: 20, marginBottom: 10 }}>
         🧬 AI Age Estimation from Your Face
       </Text>
-      <Text category='s1' style={{ textAlign: 'center', marginBottom: 24 }}>
+      <Text category='s1' style={styles.stepSubtitle}>
         Discover your biological and perceived age instantly using advanced AI facial analysis.
       </Text>
       {/* Upload/Take Photo UI below */}
@@ -800,73 +800,75 @@ function AppContent() {
 
   // Step 2: Analyzing Photo
   const renderStep2 = () => (
-    <ScrollView contentContainerStyle={styles.mainContainer}>
-      <Layout style={styles.headerContainer}>
-        <Text category='h4' style={styles.stepTitle}>🔍 Analyzing Photo</Text>
-        <Text category='s1' style={styles.stepSubtitle}>
-          Please wait while our models analyze your photo...
-        </Text>
-      </Layout>
-      <Layout style={[styles.contentContainer, { minHeight: 0, maxHeight: undefined, justifyContent: 'center', alignItems: 'center' }]}> 
-        {selectedImage && (
-          <Layout style={[styles.analyzingImageContainer, { width: ANALYZE_IMAGE_SIZE, height: ANALYZE_IMAGE_SIZE }]}> 
-            <Image 
-              source={{ uri: selectedImage.uri }} 
-              style={{
-                width: ANALYZE_IMAGE_SIZE,
-                height: ANALYZE_IMAGE_SIZE,
-                borderRadius: 20,
-              }}
-              resizeMode="cover"
-            />
-            <View style={[styles.scanOverlay, { width: ANALYZE_IMAGE_SIZE, height: ANALYZE_IMAGE_SIZE }]}> 
-              <Animated.View style={[
-                {
-                  position: 'absolute',
-                  left: '50%',
-                  width: ANALYZE_IMAGE_SIZE * 0.95,
-                  height: 6,
-                  borderRadius: 3,
-                  shadowColor: '#4f8cff',
-                  shadowOffset: { width: 0, height: 0 },
-                  shadowOpacity: 0.5,
-                  shadowRadius: 12,
-                  elevation: 8,
-                  opacity: scanLineOpacity,
-                  transform: [
-                    { translateX: -(ANALYZE_IMAGE_SIZE * 0.95) / 2 },
-                    {
-                      translateY: scanLinePosition.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [0, ANALYZE_IMAGE_SIZE - 6],
-                      })
-                    }
-                  ]
-                }
-              ]}>
-                <LinearGradient
-                  colors={['#4f8cff', '#4fd1c5']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={{ width: '100%', height: '100%', borderRadius: 3 }}
-                />
-              </Animated.View>
-              {/* Brackets inset to match border radius visually */}
-              <View style={[styles.scanCornerTopLeft, { top: 20, left: 20 }]} />
-              <View style={[styles.scanCornerTopRight, { top: 20, right: 20 }]} />
-              <View style={[styles.scanCornerBottomLeft, { bottom: 20, left: 20 }]} />
-              <View style={[styles.scanCornerBottomRight, { bottom: 20, right: 20 }]} />
-            </View>
+    <ScrollView contentContainerStyle={styles.resultsScrollViewContent}>
+      <Layout style={[{ maxWidth: MAIN_MAX_WIDTH, width: '100%', alignSelf: 'center' }]}> 
+        <Layout style={styles.headerContainer}>
+          <Text category='h4' style={styles.stepTitle}>🔍 Analyzing Photo</Text>
+          <Text category='s1' style={styles.stepSubtitle}>
+            Please wait while our models analyze your photo...
+          </Text>
+        </Layout>
+        <Layout style={[styles.contentContainer, { minHeight: 0, maxHeight: undefined, justifyContent: 'center', alignItems: 'center' }]}> 
+          {selectedImage && (
+            <Layout style={[styles.analyzingImageContainer, { width: ANALYZE_IMAGE_SIZE, height: ANALYZE_IMAGE_SIZE }]}> 
+              <Image 
+                source={{ uri: selectedImage.uri }} 
+                style={{
+                  width: ANALYZE_IMAGE_SIZE,
+                  height: ANALYZE_IMAGE_SIZE,
+                  borderRadius: 20,
+                }}
+                resizeMode="cover"
+              />
+              <View style={[styles.scanOverlay, { width: ANALYZE_IMAGE_SIZE, height: ANALYZE_IMAGE_SIZE }]}> 
+                <Animated.View style={[
+                  {
+                    position: 'absolute',
+                    left: '50%',
+                    width: ANALYZE_IMAGE_SIZE * 0.95,
+                    height: 6,
+                    borderRadius: 3,
+                    shadowColor: '#4f8cff',
+                    shadowOffset: { width: 0, height: 0 },
+                    shadowOpacity: 0.5,
+                    shadowRadius: 12,
+                    elevation: 8,
+                    opacity: scanLineOpacity,
+                    transform: [
+                      { translateX: -(ANALYZE_IMAGE_SIZE * 0.95) / 2 },
+                      {
+                        translateY: scanLinePosition.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0, ANALYZE_IMAGE_SIZE - 6],
+                        })
+                      }
+                    ]
+                  }
+                ]}>
+                  <LinearGradient
+                    colors={['#4f8cff', '#4fd1c5']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={{ width: '100%', height: '100%', borderRadius: 3 }}
+                  />
+                </Animated.View>
+                {/* Brackets inset to match border radius visually */}
+                <View style={[styles.scanCornerTopLeft, { top: 20, left: 20 }]} />
+                <View style={[styles.scanCornerTopRight, { top: 20, right: 20 }]} />
+                <View style={[styles.scanCornerBottomLeft, { bottom: 20, left: 20 }]} />
+                <View style={[styles.scanCornerBottomRight, { bottom: 20, right: 20 }]} />
+              </View>
+            </Layout>
+          )}
+          <Layout style={styles.loadingContainer}>
+            <Spinner size='large' />
+            <Text category='h6' style={styles.loadingText}>
+              Detecting faces and analyzing age...
+            </Text>
+            <Text category='c1' style={styles.loadingSubtext}>
+              Using Harvard FaceAge, DeepFace + OpenAI models
+            </Text>
           </Layout>
-        )}
-        <Layout style={styles.loadingContainer}>
-          <Spinner size='large' />
-          <Text category='h6' style={styles.loadingText}>
-            Detecting faces and analyzing age...
-          </Text>
-          <Text category='c1' style={styles.loadingSubtext}>
-            Using Harvard FaceAge, DeepFace + OpenAI models
-          </Text>
         </Layout>
       </Layout>
     </ScrollView>
