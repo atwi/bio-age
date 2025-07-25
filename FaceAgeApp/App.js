@@ -1747,6 +1747,7 @@ const styles = StyleSheet.create({
     maxWidth: 400,
     height: 300,
     borderRadius: 10,
+    transform: 'scaleX(-1)', // Mirror the video horizontally
   },
   webCameraControls: {
     flexDirection: 'row',
