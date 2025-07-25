@@ -869,8 +869,8 @@ function AppContent() {
 
   // Step 3: Show Results
   const renderStep3 = () => (
-    <Layout style={[styles.stepContainer, { paddingLeft: 0, paddingRight: 0, maxWidth: MAIN_MAX_WIDTH, width: '100%', alignSelf: 'center' }]}>
-      <ScrollView style={[styles.resultsScrollView, { width: '100%', maxWidth: MAIN_MAX_WIDTH, alignSelf: 'center', paddingHorizontal: 0, marginHorizontal: 0 }]}>
+    <ScrollView contentContainerStyle={styles.resultsScrollViewContent}>
+      <Layout style={[styles.stepContainer, { maxWidth: MAIN_MAX_WIDTH, width: '100%', alignSelf: 'center', paddingLeft: 0, paddingRight: 0 }]}> 
         <Layout style={styles.headerContainer}>
           <Text category='h4' style={styles.stepTitle}>🎯 Analysis Results</Text>
           <Text category='s1' style={styles.stepSubtitle}>
@@ -1104,28 +1104,26 @@ function AppContent() {
             </Text>
           </Card>
         )}
-      </ScrollView>
-
-      <Layout style={[styles.resultsActions, { maxWidth: MAIN_MAX_WIDTH, width: '100%', alignSelf: 'center' }]}>
-        <Button
-          style={styles.shareButton}
-          onPress={shareResults}
-          accessoryLeft={ShareIcon}
-          status='primary'
-        >
-          Share Results
-        </Button>
-        
-        <Button
-          style={styles.secondaryButton}
-          onPress={() => setCurrentStep(1)}
-          accessoryLeft={ArrowBackIcon}
-          status='basic'
-        >
-          Try Another Photo
-        </Button>
+        <Layout style={[styles.resultsActions, { maxWidth: MAIN_MAX_WIDTH, width: '100%', alignSelf: 'center' }]}> 
+          <Button
+            style={styles.shareButton}
+            onPress={shareResults}
+            accessoryLeft={ShareIcon}
+            status='primary'
+          >
+            Share Results
+          </Button>
+          <Button
+            style={styles.secondaryButton}
+            onPress={() => setCurrentStep(1)}
+            accessoryLeft={ArrowBackIcon}
+            status='basic'
+          >
+            Try Another Photo
+          </Button>
+        </Layout>
       </Layout>
-    </Layout>
+    </ScrollView>
   );
 
   const renderApiStatus = () => (
@@ -1832,6 +1830,14 @@ const styles = StyleSheet.create({
     maxWidth: MAIN_MAX_WIDTH,
     width: '100%',
     alignSelf: 'center',
+  },
+  resultsScrollViewContent: {
+    flexGrow: 1,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    minHeight: '100%',
+    backgroundColor: '#fff',
+    width: '100%',
   },
 });
 
