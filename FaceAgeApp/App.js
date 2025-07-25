@@ -682,42 +682,43 @@ function AppContent() {
   // Web camera view for browsers
   if (showWebCamera && Platform.OS === 'web') {
     return (
-      <SafeAreaView style={styles.container}>
-        <Layout style={styles.fullScreen}>
-          <Card style={styles.webCameraCard}>
-            <Text category='h6' style={styles.webCameraTitle}>📷 Take Photo</Text>
-            <Layout style={styles.webCameraContainer}>
-              <video
-                ref={videoRef}
-                style={styles.video}
-                autoPlay
-                playsInline
-                muted
-              />
-              <canvas
-                ref={canvasRef}
-                style={{ display: 'none' }}
-              />
-            </Layout>
-            <Layout style={styles.webCameraControls}>
-              <Button
-                style={styles.webCameraButton}
-                onPress={captureWebPhoto}
-                accessoryLeft={CameraIcon}
-              >
-                Capture
-              </Button>
-              <Button
-                style={styles.webCameraButton}
-                onPress={closeWebCamera}
-                status='basic'
-              >
-                Cancel
-              </Button>
-            </Layout>
-          </Card>
-        </Layout>
-      </SafeAreaView>
+      <View style={styles.fullScreenCamera}>
+        <video
+          ref={videoRef}
+          style={styles.fullScreenVideo}
+          autoPlay
+          playsInline
+          muted
+        />
+        <canvas
+          ref={canvasRef}
+          style={{ display: 'none' }}
+        />
+        
+        {/* Top overlay with title */}
+        <View style={styles.cameraTopOverlay}>
+          <Text style={styles.cameraTitle}>Take a clear photo that shows your full face.</Text>
+        </View>
+        
+        {/* Bottom overlay with buttons */}
+        <View style={styles.cameraBottomOverlay}>
+          <TouchableOpacity
+            style={styles.cameraOverlayButton}
+            onPress={closeWebCamera}
+          >
+            <Text style={styles.cameraButtonText}>Cancel</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={[styles.cameraOverlayButton, styles.captureButton]}
+            onPress={captureWebPhoto}
+          >
+            <View style={styles.captureButtonInner} />
+          </TouchableOpacity>
+          
+          <View style={styles.cameraButtonSpacer} />
+        </View>
+      </View>
     );
   }
 
@@ -949,68 +950,66 @@ function AppContent() {
   // Step 2: Analyzing Photo
   const renderStep2 = () => (
     <ScrollView contentContainerStyle={styles.analyzingPageContent}>
-      <Layout style={[{ maxWidth: MAIN_MAX_WIDTH, width: '100%', alignSelf: 'center', flex: 1, justifyContent: 'center' }]}> 
-        <Layout style={[styles.contentContainer, { minHeight: 0, maxHeight: undefined, justifyContent: 'center', alignItems: 'center' }]}> 
-          {selectedImage && (
-            <Layout style={[styles.analyzingImageContainer, { width: ANALYZE_IMAGE_SIZE, height: ANALYZE_IMAGE_SIZE }]}> 
-              <Image 
-                source={{ uri: selectedImage.uri }} 
-                style={{
-                  width: ANALYZE_IMAGE_SIZE,
-                  height: ANALYZE_IMAGE_SIZE,
-                  borderRadius: 20,
-                }}
-                resizeMode="cover"
-              />
-              <View style={[styles.scanOverlay, { width: ANALYZE_IMAGE_SIZE, height: ANALYZE_IMAGE_SIZE }]}> 
-                <Animated.View style={[
-                  {
-                    position: 'absolute',
-                    left: '50%',
-                    width: ANALYZE_IMAGE_SIZE * 0.95,
-                    height: 6,
-                    borderRadius: 3,
-                    shadowColor: '#4f8cff',
-                    shadowOffset: { width: 0, height: 0 },
-                    shadowOpacity: 0.5,
-                    shadowRadius: 12,
-                    elevation: 8,
-                    opacity: scanLineOpacity,
-                    transform: [
-                      { translateX: -(ANALYZE_IMAGE_SIZE * 0.95) / 2 },
-                      {
-                        translateY: scanLinePosition.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [0, ANALYZE_IMAGE_SIZE - 6],
-                        })
-                      }
-                    ]
-                  }
-                ]}>
-                  <LinearGradient
-                    colors={['#4f8cff', '#4fd1c5']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={{ width: '100%', height: '100%', borderRadius: 3 }}
-                  />
-                </Animated.View>
-                {/* Brackets inset to match border radius visually */}
-                <View style={[styles.scanCornerTopLeft, { top: 20, left: 20 }]} />
-                <View style={[styles.scanCornerTopRight, { top: 20, right: 20 }]} />
-                <View style={[styles.scanCornerBottomLeft, { bottom: 20, left: 20 }]} />
-                <View style={[styles.scanCornerBottomRight, { bottom: 20, right: 20 }]} />
-              </View>
-            </Layout>
-          )}
-          <Layout style={styles.loadingContainer}>
-            <Spinner size='large' />
-            <Text category='h6' style={styles.loadingText}>
-              Detecting faces and analyzing age...
-            </Text>
-            <Text category='c1' style={styles.loadingSubtext}>
-              Using Harvard FaceAge, DeepFace + OpenAI models
-            </Text>
+      <Layout style={[styles.contentContainer, { minHeight: 0, maxHeight: undefined, justifyContent: 'center', alignItems: 'center' }]}> 
+        {selectedImage && (
+          <Layout style={[styles.analyzingImageContainer, { width: ANALYZE_IMAGE_SIZE, height: ANALYZE_IMAGE_SIZE }]}> 
+            <Image 
+              source={{ uri: selectedImage.uri }} 
+              style={{
+                width: ANALYZE_IMAGE_SIZE,
+                height: ANALYZE_IMAGE_SIZE,
+                borderRadius: 20,
+              }}
+              resizeMode="cover"
+            />
+            <View style={[styles.scanOverlay, { width: ANALYZE_IMAGE_SIZE, height: ANALYZE_IMAGE_SIZE }]}> 
+              <Animated.View style={[
+                {
+                  position: 'absolute',
+                  left: '50%',
+                  width: ANALYZE_IMAGE_SIZE * 0.95,
+                  height: 6,
+                  borderRadius: 3,
+                  shadowColor: '#4f8cff',
+                  shadowOffset: { width: 0, height: 0 },
+                  shadowOpacity: 0.5,
+                  shadowRadius: 12,
+                  elevation: 8,
+                  opacity: scanLineOpacity,
+                  transform: [
+                    { translateX: -(ANALYZE_IMAGE_SIZE * 0.95) / 2 },
+                    {
+                      translateY: scanLinePosition.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0, ANALYZE_IMAGE_SIZE - 6],
+                      })
+                    }
+                  ]
+                }
+              ]}>
+                <LinearGradient
+                  colors={['#4f8cff', '#4fd1c5']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={{ width: '100%', height: '100%', borderRadius: 3 }}
+                />
+              </Animated.View>
+              {/* Brackets inset to match border radius visually */}
+              <View style={[styles.scanCornerTopLeft, { top: 20, left: 20 }]} />
+              <View style={[styles.scanCornerTopRight, { top: 20, right: 20 }]} />
+              <View style={[styles.scanCornerBottomLeft, { bottom: 20, left: 20 }]} />
+              <View style={[styles.scanCornerBottomRight, { bottom: 20, right: 20 }]} />
+            </View>
           </Layout>
+        )}
+        <Layout style={styles.loadingContainer}>
+          <Spinner size='large' />
+          <Text category='h6' style={styles.loadingText}>
+            Detecting faces and analyzing age...
+          </Text>
+          <Text category='c1' style={styles.loadingSubtext}>
+            Using Harvard FaceAge, DeepFace + OpenAI models
+          </Text>
         </Layout>
       </Layout>
       <AppFooter 
@@ -2033,7 +2032,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   footerLink: {
-    color: '#3366FF',
+    color: '#3B82F6',
     fontSize: 14,
     fontWeight: '500',
   },
@@ -2059,6 +2058,84 @@ const styles = StyleSheet.create({
   modalSectionTitle: {
     fontWeight: 'bold',
     fontSize: 15,
+  },
+  fullScreenCamera: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    width: '100vw',
+    height: '100vh',
+    backgroundColor: '#000',
+    zIndex: 9999,
+  },
+  fullScreenVideo: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover',
+    transform: 'scaleX(-1)', // Mirror the video horizontally
+  },
+  cameraTopOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingTop: 50,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
+    background: 'linear-gradient(to bottom, rgba(0,0,0,0.7), transparent)',
+    alignItems: 'center',
+  },
+  cameraTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  cameraBottomOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingTop: 40,
+    paddingBottom: 50,
+    paddingHorizontal: 40,
+    background: 'linear-gradient(to top, rgba(0,0,0,0.7), transparent)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  cameraOverlayButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 25,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    backdropFilter: 'blur(10px)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+  },
+  cameraButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  captureButton: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 0,
+    paddingHorizontal: 0,
+  },
+  captureButtonInner: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#fff',
+  },
+  cameraButtonSpacer: {
+    width: 80, // Same width as capture button for centering
   },
 });
 
