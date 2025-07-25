@@ -2075,7 +2075,7 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     width: '100vw',
-    height: '100vh',
+    height: '100dvh', // Dynamic viewport height for mobile browsers
     backgroundColor: '#000',
     zIndex: 9999,
   },
@@ -2107,7 +2107,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     paddingTop: 40,
-    paddingBottom: 50,
+    paddingBottom: Math.max(50, typeof window !== 'undefined' && window.screen ? window.screen.height * 0.08 : 50),
     paddingHorizontal: 40,
     background: 'linear-gradient(to top, rgba(0,0,0,0.7), transparent)',
     flexDirection: 'row',
