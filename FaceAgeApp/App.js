@@ -746,9 +746,9 @@ function AppContent() {
 
   // Step 1: Upload or Take Photo
   const renderStep1 = () => (
-    <Layout style={styles.mainContainer}>
-      <Text category='h1' style={{ fontWeight: 'bold', textAlign: 'center', fontSize: 32, marginTop: 20, marginBottom: 10 }}>
-        AI Age Estimation from Your Face 🧬
+    <ScrollView contentContainerStyle={styles.mainContainer}>
+      <Text category='h1' style={{ fontWeight: 'bold', textAlign: 'center', fontSize: 28, marginTop: 20, marginBottom: 10 }}>
+        🧬 AI Age Estimation from Your Face
       </Text>
       <Text category='s1' style={{ textAlign: 'center', marginBottom: 24 }}>
         Discover your biological and perceived age instantly using advanced AI facial analysis.
@@ -790,20 +790,19 @@ function AppContent() {
           </Text>
         </TouchableOpacity>
       </Text>
-    </Layout>
+    </ScrollView>
   );
 
   // Step 2: Analyzing Photo
   const renderStep2 = () => (
-    <Layout style={[styles.stepContainer, { minHeight: getResponsiveHeight(), maxHeight: getResponsiveHeight(), justifyContent: 'center' }]}> 
+    <ScrollView contentContainerStyle={styles.mainContainer}>
       <Layout style={styles.headerContainer}>
         <Text category='h4' style={styles.stepTitle}>🔍 Analyzing Photo</Text>
         <Text category='s1' style={styles.stepSubtitle}>
           Please wait while our models analyze your photo...
         </Text>
       </Layout>
-
-      <Layout style={[styles.contentContainer, { minHeight: 0, maxHeight: getResponsiveHeight() * 0.7, justifyContent: 'center', alignItems: 'center' }]}> 
+      <Layout style={[styles.contentContainer, { minHeight: 0, maxHeight: undefined, justifyContent: 'center', alignItems: 'center' }]}> 
         {selectedImage && (
           <Layout style={[styles.analyzingImageContainer, { width: ANALYZE_IMAGE_SIZE, height: ANALYZE_IMAGE_SIZE }]}> 
             <Image 
@@ -855,7 +854,6 @@ function AppContent() {
             </View>
           </Layout>
         )}
-
         <Layout style={styles.loadingContainer}>
           <Spinner size='large' />
           <Text category='h6' style={styles.loadingText}>
@@ -866,7 +864,7 @@ function AppContent() {
           </Text>
         </Layout>
       </Layout>
-    </Layout>
+    </ScrollView>
   );
 
   // Step 3: Show Results
@@ -1175,6 +1173,7 @@ function AppContent() {
         {currentStep === 2 && renderStep2()}
         {currentStep === 3 && renderStep3()}
       </Layout>
+      {renderInfoModal()}
     </SafeAreaView>
   );
 }
