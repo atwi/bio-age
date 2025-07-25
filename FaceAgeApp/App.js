@@ -23,6 +23,11 @@ import Constants from 'expo-constants';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Asset } from 'expo-asset';
 
+// Firebase imports
+import { auth, db, storage, googleProvider, appleProvider } from './firebase';
+import { signInWithGoogle, signInWithApple, signOut, createOrUpdateUserDocument, onAuthStateChange, getCurrentUser } from './services/authService';
+import { saveAnalysisResult, getUserAnalysisHistory, getUserProfile, updateUserProfile, deleteAnalysis } from './services/userService';
+
 // UI Kitten imports
 import * as eva from '@eva-design/eva';
 import { EvaIconsPack } from '@ui-kitten/eva-icons';
@@ -145,7 +150,7 @@ const MODEL_DESCRIPTIONS = {
   chatgpt: 'Best for human-like age perception',
 };
 
-const AppHeader = React.memo(function AppHeader({ onShowInfo }) {
+const AppHeader = React.memo(function AppHeader({ onShowInfo, user, onSignIn, onSignOut }) {
   const openEmail = () => {
     const emailUrl = 'mailto:alexthorburnwinsor@gmail.com';
     if (Platform.OS === 'web') {
@@ -186,7 +191,25 @@ const AppHeader = React.memo(function AppHeader({ onShowInfo }) {
         </TouchableOpacity>
       )}
       accessoryRight={() => (
-        <Layout style={{ flexDirection: 'row' }}>
+        <Layout style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {user ? (
+            <>
+              <Text style={{ fontSize: 12, color: '#666', marginRight: 8 }}>
+                {user.displayName || user.email}
+              </Text>
+              <TopNavigationAction
+                icon={(props) => <Icon {...props} name='log-out-outline' />}
+                onPress={onSignOut}
+              />
+            </>
+          ) : (
+            <>
+              <TopNavigationAction
+                icon={(props) => <Icon {...props} name='person-outline' />}
+                onPress={() => onSignIn('google')}
+              />
+            </>
+          )}
           <InfoAction />
           <ContactAction />
         </Layout>
@@ -261,6 +284,10 @@ function AppContent() {
   const [faceMeshOverlays, setFaceMeshOverlays] = useState({});
   const [modalContent, setModalContent] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
+  
+  // Firebase auth state
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
   // Request permissions on mount
   useEffect(() => {
@@ -278,6 +305,16 @@ function AppContent() {
   // Check API health
   useEffect(() => {
     checkApiHealth();
+  }, []);
+
+  // Set up Firebase auth state listener
+  useEffect(() => {
+    const unsubscribe = onAuthStateChange((user) => {
+      setUser(user);
+      setAuthLoading(false);
+    });
+
+    return () => unsubscribe();
   }, []);
 
   // Start scanning animation when in step 2
@@ -520,6 +557,21 @@ function AppContent() {
         }
         setResults(data);
         
+        // Save results to Firebase if user is signed in
+        if (user && data.faces && data.faces.length > 0) {
+          try {
+            await saveAnalysisResult(user.uid, {
+              timestamp: new Date(),
+              faces: data.faces,
+              originalImage: selectedImage?.uri,
+              analysisId: Date.now().toString()
+            });
+          } catch (error) {
+            console.error('Failed to save analysis result:', error);
+            // Don't show error to user, just log it
+          }
+        }
+        
         // Add minimum delay to show scanning animation (reduced for Railway)
         await new Promise(resolve => setTimeout(resolve, 2000));
         setCurrentStep(3); // Move to results step
@@ -553,6 +605,35 @@ function AppContent() {
     setResults(null);
     setCurrentStep(1);
     closeWebCamera();
+  };
+
+  const handleSignIn = async (provider) => {
+    try {
+      let result;
+      if (provider === 'google') {
+        result = await signInWithGoogle();
+      } else if (provider === 'apple') {
+        result = await signInWithApple();
+      }
+      
+      if (result) {
+        await createOrUpdateUserDocument(result.user);
+        Alert.alert('Success', 'Signed in successfully!');
+      }
+    } catch (error) {
+      console.error('Sign in error:', error);
+      Alert.alert('Error', 'Failed to sign in: ' + error.message);
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+      Alert.alert('Success', 'Signed out successfully!');
+    } catch (error) {
+      console.error('Sign out error:', error);
+      Alert.alert('Error', 'Failed to sign out: ' + error.message);
+    }
   };
 
   const shareResults = async () => {
@@ -1208,44 +1289,136 @@ function AppContent() {
                     elevation: 1,
                     width: '100%',
                     alignSelf: 'center',
+                    position: 'relative',
+                    overflow: 'hidden',
                   }}>
-                    <Text style={{ fontSize: 13, fontWeight: '700', color: '#4a5a6a', marginBottom: 8, letterSpacing: 0.2, textAlign: 'left' }}>AGE FACTORS</Text>
-                    {['skin_texture', 'skin_tone', 'hair', 'facial_volume'].map((factor, i, arr) => {
-                      const f = face.chatgpt_factors[factor];
-                      if (!f) return null;
-                      const percent = Math.max(0, Math.min(1, ((f.age_rating - 0) / 100)));
-                      return (
-                        <Layout key={factor} style={{ marginBottom: i === arr.length - 1 ? 0 : 12 }}>
-                          <Layout style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'transparent', minHeight: 36 }}>
-                            <Text style={{ fontSize: 20, marginRight: 8 }}>{AGE_FACTOR_ICONS[factor]}</Text>
-                            <Layout style={{ flex: 1 }}>
-                              <Text style={{ fontWeight: '600', fontSize: 14, color: '#223', marginBottom: 1 }}>{AGE_FACTOR_LABELS[factor]}</Text>
-                              <Text style={{ fontSize: 11, color: '#7a869a', marginBottom: 2 }}>{f.explanation}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: '#4a5a6a', letterSpacing: 0.2, textAlign: 'left' }}>AGE FACTORS</Text>
+                      {!user && (
+                        <View style={{
+                          backgroundColor: '#FF9800',
+                          borderRadius: 8,
+                          paddingHorizontal: 6,
+                          paddingVertical: 2,
+                          marginLeft: 8,
+                        }}>
+                          <Text style={{ fontSize: 9, color: '#fff', fontWeight: 'bold' }}>
+                            PREMIUM
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                    
+                    {/* Blurred content when not signed in */}
+                    <View style={[
+                      { 
+                        filter: user ? 'none' : 'blur(2px)',
+                        opacity: user ? 1 : 0.8,
+                        transition: 'all 0.3s ease',
+                      }
+                    ]}>
+                      {['skin_texture', 'skin_tone', 'hair', 'facial_volume'].map((factor, i, arr) => {
+                        const f = face.chatgpt_factors[factor];
+                        if (!f) return null;
+                        const percent = Math.max(0, Math.min(1, ((f.age_rating - 0) / 100)));
+                        return (
+                          <Layout key={factor} style={{ marginBottom: i === arr.length - 1 ? 0 : 12 }}>
+                            <Layout style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'transparent', minHeight: 36 }}>
+                              <Text style={{ fontSize: 20, marginRight: 8 }}>{AGE_FACTOR_ICONS[factor]}</Text>
+                              <Layout style={{ flex: 1 }}>
+                                <Text style={{ fontWeight: '600', fontSize: 14, color: '#223', marginBottom: 1 }}>{AGE_FACTOR_LABELS[factor]}</Text>
+                                <Text style={{ fontSize: 11, color: '#7a869a', marginBottom: 2 }}>{f.explanation}</Text>
+                              </Layout>
+                              <Text style={{ fontWeight: 'bold', fontSize: 15, color: '#223', marginLeft: 10, minWidth: 32, textAlign: 'right' }}>{f.age_rating} <Text style={{ fontSize: 11, color: '#7a869a' }}>yrs</Text></Text>
                             </Layout>
-                            <Text style={{ fontWeight: 'bold', fontSize: 15, color: '#223', marginLeft: 10, minWidth: 32, textAlign: 'right' }}>{f.age_rating} <Text style={{ fontSize: 11, color: '#7a869a' }}>yrs</Text></Text>
+                            <View style={{ position: 'relative', height: 7, width: '100%', borderRadius: 4, backgroundColor: '#e6eaf2', overflow: 'hidden', marginTop: 2, marginBottom: 2 }}>
+                              <LinearGradient
+                                colors={['#4f8cff', '#4fd1c5']}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 0 }}
+                                style={{
+                                  position: 'absolute',
+                                  left: 0,
+                                  top: 0,
+                                  width: `${percent * 100}%`,
+                                  height: '100%',
+                                  borderRadius: 4,
+                                  zIndex: 1,
+                                }}
+                              />
+                            </View>
+                            {i !== arr.length - 1 && (
+                              <View style={{ height: 1, backgroundColor: '#eee', marginTop: 12, marginBottom: 12, marginLeft: 0 }} />
+                            )}
                           </Layout>
-                          <View style={{ position: 'relative', height: 7, width: '100%', borderRadius: 4, backgroundColor: '#e6eaf2', overflow: 'hidden', marginTop: 2, marginBottom: 2 }}>
-                            <LinearGradient
-                              colors={['#4f8cff', '#4fd1c5']}
-                              start={{ x: 0, y: 0 }}
-                              end={{ x: 1, y: 0 }}
-                              style={{
-                                position: 'absolute',
-                                left: 0,
-                                top: 0,
-                                width: `${percent * 100}%`,
-                                height: '100%',
-                                borderRadius: 4,
-                                zIndex: 1,
-                              }}
-                            />
-                          </View>
-                          {i !== arr.length - 1 && (
-                            <View style={{ height: 1, backgroundColor: '#eee', marginTop: 12, marginBottom: 12, marginLeft: 0 }} />
-                          )}
-                        </Layout>
-                      );
-                    })}
+                        );
+                      })}
+                    </View>
+
+                    {/* Sign Up Overlay when not signed in */}
+                    {!user && (
+                      <View style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        backgroundColor: 'rgba(255, 255, 255, 0.7)',
+                        backdropFilter: 'blur(4px)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        borderRadius: 12,
+                      }}>
+                        <View style={{
+                          alignItems: 'center',
+                          padding: 20,
+                          maxWidth: 200,
+                        }}>
+                          <Text style={{
+                            fontSize: 16,
+                            fontWeight: '600',
+                            color: '#333',
+                            textAlign: 'center',
+                            marginBottom: 8,
+                          }}>
+                            🔒 Detailed Analysis
+                          </Text>
+                          <Text style={{
+                            fontSize: 13,
+                            color: '#666',
+                            textAlign: 'center',
+                            marginBottom: 20,
+                            lineHeight: 18,
+                          }}>
+                            Sign up to see detailed breakdown of skin texture, hair, and facial features
+                          </Text>
+                          <TouchableOpacity
+                            style={{
+                              backgroundColor: '#4f8cff',
+                              paddingVertical: 12,
+                              paddingHorizontal: 24,
+                              borderRadius: 25,
+                              shadowColor: '#4f8cff',
+                              shadowOffset: { width: 0, height: 4 },
+                              shadowOpacity: 0.3,
+                              shadowRadius: 8,
+                              elevation: 4,
+                            }}
+                            onPress={() => handleSignIn('google')}
+                          >
+                            <Text style={{
+                              color: '#fff',
+                              fontSize: 14,
+                              fontWeight: '600',
+                              textAlign: 'center',
+                            }}>
+                              Sign Up to View
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    )}
                   </Layout>
                 )}
               </Layout>
@@ -1330,7 +1503,12 @@ function AppContent() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="auto" backgroundColor="#ffffff" barStyle="dark-content" />
-      <AppHeader onShowInfo={() => setInfoVisible(true)} />
+      <AppHeader 
+        onShowInfo={() => setInfoVisible(true)} 
+        user={user}
+        onSignIn={handleSignIn}
+        onSignOut={handleSignOut}
+      />
       <Layout style={styles.fullScreen}>
         {currentStep === 1 && renderStep1()}
         {currentStep === 2 && renderStep2()}
