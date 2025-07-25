@@ -20,6 +20,7 @@ import * as Sharing from 'expo-sharing';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Asset } from 'expo-asset';
 
 // UI Kitten imports
 import * as eva from '@eva-design/eva';
@@ -139,10 +140,10 @@ const MODEL_DESCRIPTIONS = {
   chatgpt: 'Best for human-like age perception',
 };
 
-function AppHeader() {
+const AppHeader = React.memo(function AppHeader() {
   const ContactAction = () => (
     <TopNavigationAction
-      icon={(props) => <Icon {...props} name='email-outline' />}
+      icon={(props) => <Icon {...props} name='email-outline' />} 
       onPress={() => window.location.href = 'mailto:alexthorburnwinsor@gmail.com'}
     />
   );
@@ -151,7 +152,11 @@ function AppHeader() {
       alignment='center'
       title={() => (
         <TouchableOpacity style={styles.headerRow} onPress={() => window.location.href = '/'}>
-          <Image source={logo} style={styles.headerLogo} />
+          <Image 
+            source={logo} 
+            style={styles.headerLogo} 
+            defaultSource={Platform.OS === 'ios' ? logo : undefined} // fallback for iOS
+          />
           <Text category='h6' style={styles.headerTitle}>TrueAge</Text>
         </TouchableOpacity>
       )}
@@ -159,7 +164,7 @@ function AppHeader() {
       style={styles.headerNav}
     />
   );
-}
+});
 
 function AppContent() {
   const [currentStep, setCurrentStep] = useState(1); // 1: Upload, 2: Analyzing, 3: Results
@@ -1177,6 +1182,9 @@ function AppContent() {
 }
 
 export default function App() {
+  useEffect(() => {
+    Asset.loadAsync(require('./assets/logo.png'));
+  }, []);
   return (
     <Fragment>
       <IconRegistry icons={EvaIconsPack} />
