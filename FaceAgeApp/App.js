@@ -47,6 +47,10 @@ import logo from './assets/logo.png';
 const { width, height } = Dimensions.get('window');
 const MAIN_MAX_WIDTH = 500;
 
+// Face outline dimensions with proper proportions
+const FACE_WIDTH = width * 0.8;   // Larger so face fills most of the photo
+const FACE_HEIGHT = FACE_WIDTH * 1.35; // Proper face proportions (1.35:1 ratio)
+
 // API Configuration
 const getApiBaseUrl = () => {
   if (typeof window !== 'undefined' && window.location) {
@@ -697,12 +701,14 @@ function AppContent() {
         
         {/* Top overlay with title */}
         <View style={styles.cameraTopOverlay}>
+          <View style={styles.instructionContainer}>
+            <Text style={styles.instructionText}>Align your face in the frame</Text>
+          </View>
         </View>
         
         {/* Face Outline Overlay */}
         <View style={styles.faceOutlineContainer}>
           <View style={styles.faceOutlineOval} />
-          <Text style={styles.instructionText}>Align your face in the frame</Text>
         </View>
         
         {/* Bottom overlay with buttons */}
@@ -2084,7 +2090,7 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    paddingTop: 50,
+    paddingTop: 60,
     paddingBottom: 20,
     paddingHorizontal: 20,
     background: 'linear-gradient(to bottom, rgba(0,0,0,0.7), transparent)',
@@ -2156,9 +2162,9 @@ const styles = StyleSheet.create({
     top: '50%',
     left: '50%',
     transform: 'translate(-50%, -50%)',
-    width: width * 0.7,
-    height: width * 0.85,
-    borderRadius: width * 0.35,
+    width: FACE_WIDTH,
+    height: FACE_HEIGHT,
+    borderRadius: FACE_WIDTH * 0.5,
     backgroundColor: 'transparent',
     borderWidth: 3,
     borderColor: 'rgba(255, 255, 255, 0.8)',
@@ -2167,20 +2173,21 @@ const styles = StyleSheet.create({
     shadowOpacity: 1,
     shadowRadius: 15,
   },
+  instructionContainer: {
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 20,
+    marginTop: 10,
+  },
   instructionText: {
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
-    transform: 'translate(-50%, -50%)',
-    marginTop: width * 0.425 + 30, // Position below oval
     color: '#fff',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
     textAlign: 'center',
     textShadowColor: 'rgba(0, 0, 0, 0.7)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
-    paddingHorizontal: 20,
   },
 });
 
