@@ -697,7 +697,12 @@ function AppContent() {
         
         {/* Top overlay with title */}
         <View style={styles.cameraTopOverlay}>
-          <Text style={styles.cameraTitle}>Take a clear photo that shows your full face.</Text>
+        </View>
+        
+        {/* Face Outline Overlay */}
+        <View style={styles.faceOutlineContainer}>
+          <View style={styles.faceOutlineOval} />
+          <Text style={styles.instructionText}>Align your face in the frame</Text>
         </View>
         
         {/* Bottom overlay with buttons */}
@@ -2136,6 +2141,46 @@ const styles = StyleSheet.create({
   },
   cameraButtonSpacer: {
     width: 80, // Same width as capture button for centering
+  },
+  faceOutlineContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  faceOutlineOval: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: 'translate(-50%, -50%)',
+    width: width * 0.7,
+    height: width * 0.85,
+    borderRadius: width * 0.35,
+    backgroundColor: 'transparent',
+    borderWidth: 3,
+    borderColor: 'rgba(255, 255, 255, 0.8)',
+    shadowColor: 'rgba(255, 255, 255, 0.5)',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 15,
+  },
+  instructionText: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: 'translate(-50%, -50%)',
+    marginTop: width * 0.425 + 30, // Position below oval
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+    textShadowColor: 'rgba(0, 0, 0, 0.7)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+    paddingHorizontal: 20,
   },
 });
 
