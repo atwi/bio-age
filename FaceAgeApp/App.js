@@ -1291,7 +1291,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    justifyContent: 'center',
+    // justifyContent: 'center', // Removed to allow scan line to start at the top
     alignItems: 'flex-start',
     overflow: 'hidden',
   },
