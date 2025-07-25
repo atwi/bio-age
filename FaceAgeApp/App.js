@@ -1711,6 +1711,13 @@ const styles = StyleSheet.create({
   webCameraCard: {
     flex: 1,
     margin: 20,
+    borderWidth: 0,
+    borderColor: 'transparent',
+    borderStyle: 'none',
+    backgroundColor: '#fff',
+    maxWidth: 500,
+    width: '100%',
+    alignSelf: 'center',
   },
   howItWorksCard: {
     marginTop: 20,
