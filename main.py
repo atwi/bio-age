@@ -423,8 +423,8 @@ def draw_facemesh(image_bytes):
 
 # FastAPI app without startup model loading
 app = FastAPI(
-    title="Bio Age Estimator API",
-    description="Facial age estimation using Harvard FaceAge and DeepFace models",
+    title="TrueAge API",
+    description="TrueAge uses advanced AI models to estimate your biological age and perceived age from a single facial photo. Upload your selfie to discover insights about your health and aging, powered by state-of-the-art deep learning and facial analysis technology.",
     version="1.0.0"
 )
 
@@ -443,7 +443,7 @@ async def root():
     web_build_path = "FaceAgeApp/dist"
     if os.path.exists(f"{web_build_path}/index.html"):
         return FileResponse(f"{web_build_path}/index.html")
-    return {"message": "Bio Age Estimator API", "status": "running"}
+    return {"message": "TrueAge API", "status": "running"}
 
 @app.get("/health")
 async def health_check():

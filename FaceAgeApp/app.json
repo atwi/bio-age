@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "FaceAge",
-    "slug": "FaceAge",
+    "name": "TrueAge",
+    "slug": "TrueAge",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",

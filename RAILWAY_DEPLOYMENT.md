@@ -139,7 +139,7 @@ TF_FORCE_GPU_ALLOW_GROWTH=true
 
 | Model | Size | Accuracy | Use Case |
 |-------|------|----------|----------|
-| **Harvard FaceAge** | 85MB | High for 60+ | Elderly subjects |
+| **Harvard FaceAge (used by TrueAge)** | 85MB | High for 60+ | Elderly subjects |
 | **DeepFace** | 539MB | Good general | All ages (bias toward 40-50) |
 | **MTCNN** | 5MB | Face detection | Detection only |
 

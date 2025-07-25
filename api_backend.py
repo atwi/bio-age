@@ -37,8 +37,8 @@ if IS_CLOUD:
 
 # Initialize FastAPI
 app = FastAPI(
-    title="Facial Age Estimation API",
-    description="AI-powered age estimation from facial features",
+    title="TrueAge API",
+    description="TrueAge uses advanced AI models to estimate your biological age and perceived age from a single facial photo. Upload your selfie to discover insights about your health and aging, powered by state-of-the-art deep learning and facial analysis technology.",
     version="1.0.0"
 )
 
@@ -466,7 +466,7 @@ async def analyze_face(file: UploadFile = File(...)):
 @app.get("/")
 async def root():
     """Root endpoint"""
-    return {"message": "Facial Age Estimation API", "version": "1.0.0"}
+    return {"message": "TrueAge API", "version": "1.0.0"}
 
 if __name__ == "__main__":
     import uvicorn

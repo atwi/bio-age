@@ -1,10 +1,10 @@
-# 📱 Facial Age Estimator
+# 📱 TrueAge
 
-A Streamlit web application that estimates biological age from facial images using AI models.
+TrueAge uses advanced AI models to estimate your biological age and perceived age from a single facial photo. Upload your selfie to discover insights about your health and aging, powered by state-of-the-art deep learning and facial analysis technology.
 
 ## 🌟 Features
 
-- **Dual Age Estimation**: Uses both Harvard FaceAge and DeepFace models for accurate predictions
+- **Dual Age Estimation**: Uses both Harvard FaceAge (used by TrueAge) and DeepFace models for accurate predictions
 - **Face Detection**: Automatic face detection using MTCNN
 - **Mobile Optimized**: Responsive design for mobile devices
 - **Multiple Input Methods**: Upload images or take photos directly
@@ -66,7 +66,7 @@ This app is optimized for Streamlit Cloud deployment:
 
 ### Models Used
 
-- **Harvard FaceAge**: Research-grade model for precise age estimation
+- **Harvard FaceAge (used by TrueAge)**: Research-grade model for precise age estimation
 - **DeepFace**: Industry-standard model with robust performance
 - **ChatGPT Vision**: AI-powered human-like age perception
 - **MTCNN**: Face detection and alignment
@@ -95,7 +95,7 @@ This app is optimized for Streamlit Cloud deployment:
 ## 🎯 Accuracy
 
 The app provides dual age estimates:
-- Harvard FaceAge: Research-grade precision
+- Harvard FaceAge (used by TrueAge): Research-grade precision
 - DeepFace: Robust across different demographics
 
 ## 🤝 Contributing
@@ -111,7 +111,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## 🙏 Acknowledgments
 
-- Harvard FaceAge research team
+- Harvard FaceAge research team (used by TrueAge)
 - DeepFace library contributors
 - Streamlit team for the amazing framework
 
