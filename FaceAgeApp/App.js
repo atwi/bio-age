@@ -37,9 +37,13 @@ import {
   IconRegistry,
   Modal,
   Tooltip,
+  TopNavigation,
+  TopNavigationAction,
 } from '@ui-kitten/components';
+import logo from './assets/logo.png';
 
 const { width, height } = Dimensions.get('window');
+const MAIN_MAX_WIDTH = 500;
 
 // API Configuration
 const getApiBaseUrl = () => {
@@ -134,6 +138,28 @@ const MODEL_DESCRIPTIONS = {
   deepface: 'Best for general face age estimation',
   chatgpt: 'Best for human-like age perception',
 };
+
+function AppHeader() {
+  const ContactAction = () => (
+    <TopNavigationAction
+      icon={(props) => <Icon {...props} name='email-outline' />}
+      onPress={() => window.location.href = 'mailto:alexthorburnwinsor@gmail.com'}
+    />
+  );
+  return (
+    <TopNavigation
+      alignment='center'
+      title={() => (
+        <TouchableOpacity style={styles.headerRow} onPress={() => window.location.href = '/'}>
+          <Image source={logo} style={styles.headerLogo} />
+          <Text category='h6' style={styles.headerTitle}>TrueAge</Text>
+        </TouchableOpacity>
+      )}
+      accessoryRight={ContactAction}
+      style={styles.headerNav}
+    />
+  );
+}
 
 function AppContent() {
   const [currentStep, setCurrentStep] = useState(1); // 1: Upload, 2: Analyzing, 3: Results
@@ -720,60 +746,50 @@ function AppContent() {
 
   // Step 1: Upload or Take Photo
   const renderStep1 = () => (
-    <Layout style={styles.stepContainer}>
-      <Layout style={styles.contentContainer}>
-        <View style={styles.mainContentContainer}>
-          <Layout style={styles.headerContainer}>
-            <Text category='h4' style={styles.stepTitle}>📸 Upload or Take A Photo</Text>
-            <Text category='s1' style={styles.stepSubtitle}>
-              Choose a clear photo with visible face(s)
-            </Text>
-          </Layout>
+    <Layout style={styles.mainContainer}>
+      <Text category='h1' style={{ fontWeight: 'bold', textAlign: 'center', fontSize: 32, marginTop: 20, marginBottom: 10 }}>
+        AI Age Estimation from Your Face 🧬
+      </Text>
+      <Text category='s1' style={{ textAlign: 'center', marginBottom: 24 }}>
+        Discover your biological and perceived age instantly using advanced AI facial analysis.
+      </Text>
+      {/* Upload/Take Photo UI below */}
+      <View style={styles.demoImageContainer}>
+        <Image 
+          source={require('./assets/demoimage.png')} 
+          style={styles.demoImage}
+          resizeMode="contain"
+        />
+      </View>
 
-          <View style={styles.demoImageContainer}>
-            <Image 
-              source={require('./assets/demoimage.png')} 
-              style={styles.demoImage}
-              resizeMode="contain"
-            />
-          </View>
-
-          <Layout style={styles.buttonContainer}>
-            <Button
-              style={styles.primaryButton}
-              onPress={takePhoto}
-              accessoryLeft={CameraIcon}
-              size='large'
-            >
-              Take A Photo
-            </Button>
-            
-            <Button
-              style={styles.secondaryButton}
-              onPress={pickImage}
-              accessoryLeft={ImageIcon}
-              size='large'
-              status='basic'
-            >
-              Choose From Gallery
-            </Button>
-          </Layout>
-
-          <Text style={{ textAlign: 'center', marginTop: 15, marginBottom: 10 }}>
-            <TouchableOpacity onPress={() => setInfoVisible(true)} activeOpacity={0.7}>
-              <Text style={{ color: '#3366FF' }}>
-                💡 Learn how this works →
-              </Text>
-            </TouchableOpacity>
-          </Text>
-        </View>
-
-        <Layout style={styles.apiStatusContainer}>
-          {renderApiStatus()}
-        </Layout>
-
-        {renderInfoModal()}
+      <Layout style={styles.buttonContainer}>
+        <Button
+          style={styles.primaryButton}
+          onPress={takePhoto}
+          accessoryLeft={CameraIcon}
+          size='large'
+        >
+          Take A Photo
+        </Button>
+        
+        <Button
+          style={styles.secondaryButton}
+          onPress={pickImage}
+          accessoryLeft={ImageIcon}
+          size='large'
+          status='basic'
+        >
+          Choose From Gallery
+        </Button>
       </Layout>
+
+      <Text style={{ textAlign: 'center', marginTop: 15, marginBottom: 10 }}>
+        <TouchableOpacity onPress={() => setInfoVisible(true)} activeOpacity={0.7}>
+          <Text style={{ color: '#3366FF' }}>
+            💡 Learn how this works →
+          </Text>
+        </TouchableOpacity>
+      </Text>
     </Layout>
   );
 
@@ -855,8 +871,8 @@ function AppContent() {
 
   // Step 3: Show Results
   const renderStep3 = () => (
-    <Layout style={[styles.stepContainer, { paddingLeft: 0, paddingRight: 0, maxWidth: 500, width: '100%', alignSelf: 'center' }]}>
-      <ScrollView style={[styles.resultsScrollView, { width: '100%', maxWidth: 500, alignSelf: 'center', paddingHorizontal: 0, marginHorizontal: 0 }]}>
+    <Layout style={[styles.stepContainer, { paddingLeft: 0, paddingRight: 0, maxWidth: MAIN_MAX_WIDTH, width: '100%', alignSelf: 'center' }]}>
+      <ScrollView style={[styles.resultsScrollView, { width: '100%', maxWidth: MAIN_MAX_WIDTH, alignSelf: 'center', paddingHorizontal: 0, marginHorizontal: 0 }]}>
         <Layout style={styles.headerContainer}>
           <Text category='h4' style={styles.stepTitle}>🎯 Analysis Results</Text>
           <Text category='s1' style={styles.stepSubtitle}>
@@ -1092,7 +1108,7 @@ function AppContent() {
         )}
       </ScrollView>
 
-      <Layout style={[styles.resultsActions, { maxWidth: 500, width: '100%', alignSelf: 'center' }]}>
+      <Layout style={[styles.resultsActions, { maxWidth: MAIN_MAX_WIDTH, width: '100%', alignSelf: 'center' }]}>
         <Button
           style={styles.shareButton}
           onPress={shareResults}
@@ -1153,6 +1169,7 @@ function AppContent() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="auto" backgroundColor="#ffffff" barStyle="dark-content" />
+      <AppHeader />
       <Layout style={styles.fullScreen}>
         {currentStep === 1 && renderStep1()}
         {currentStep === 2 && renderStep2()}
@@ -1775,6 +1792,40 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#3366FF',
     fontWeight: '600',
+  },
+  headerLogo: {
+    width: 32,
+    height: 32,
+    marginRight: 10,
+    borderRadius: 8,
+    resizeMode: 'contain',
+  },
+  headerTitle: {
+    fontWeight: 'bold',
+    color: '#1a2a3a',
+    fontSize: 20,
+    letterSpacing: 0.5,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  headerNav: {
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+    minHeight: 60,
+    paddingHorizontal: 8,
+  },
+  mainContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    padding: 24,
+    maxWidth: MAIN_MAX_WIDTH,
+    width: '100%',
+    alignSelf: 'center',
   },
 });
 
