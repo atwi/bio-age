@@ -141,7 +141,7 @@ const MODEL_DESCRIPTIONS = {
   chatgpt: 'Best for human-like age perception',
 };
 
-const AppHeader = React.memo(function AppHeader() {
+const AppHeader = React.memo(function AppHeader({ onShowInfo }) {
   const openEmail = () => {
     const emailUrl = 'mailto:alexthorburnwinsor@gmail.com';
     if (Platform.OS === 'web') {
@@ -150,6 +150,13 @@ const AppHeader = React.memo(function AppHeader() {
       Linking.openURL(emailUrl);
     }
   };
+
+  const InfoAction = () => (
+    <TopNavigationAction
+      icon={(props) => <Icon {...props} name='info-outline' />}
+      onPress={onShowInfo}
+    />
+  );
 
   const ContactAction = () => (
     <TopNavigationAction
@@ -174,13 +181,18 @@ const AppHeader = React.memo(function AppHeader() {
           <Text category='h6' style={styles.headerTitle}>TrueAge</Text>
         </TouchableOpacity>
       )}
-      accessoryRight={ContactAction}
+      accessoryRight={() => (
+        <Layout style={{ flexDirection: 'row' }}>
+          <InfoAction />
+          <ContactAction />
+        </Layout>
+      )}
       style={styles.headerNav}
     />
   );
 });
 
-const AppFooter = ({ onShowModal }) => {
+const AppFooter = ({ onShowModal, onShowInfo }) => {
   const showModal = (type) => {
     onShowModal(type);
   };
@@ -198,6 +210,10 @@ const AppFooter = ({ onShowModal }) => {
     <Layout style={styles.footer}>
       <Layout style={styles.footerContent}>
         <Layout style={styles.footerLinks}>
+          <TouchableOpacity onPress={onShowInfo}>
+            <Text style={styles.footerLink}>How It Works</Text>
+          </TouchableOpacity>
+          <Text style={styles.footerSeparator}>•</Text>
           <TouchableOpacity onPress={() => showModal('privacy')}>
             <Text style={styles.footerLink}>Privacy Policy</Text>
           </TouchableOpacity>
@@ -923,83 +939,84 @@ function AppContent() {
         </Button>
       </Layout>
 
-      <Text style={{ textAlign: 'center', marginTop: 15, marginBottom: 10 }}>
-        <TouchableOpacity onPress={() => setInfoVisible(true)} activeOpacity={0.7}>
-          <Text style={{ color: '#3366FF' }}>
-            💡 Learn how this works →
-          </Text>
-        </TouchableOpacity>
-      </Text>
-      <AppFooter onShowModal={(contentType) => { setModalContent(contentType); setModalVisible(true); }} />
+      <AppFooter 
+        onShowModal={(contentType) => { setModalContent(contentType); setModalVisible(true); }} 
+        onShowInfo={() => setInfoVisible(true)}
+      />
     </ScrollView>
   );
 
   // Step 2: Analyzing Photo
   const renderStep2 = () => (
     <ScrollView contentContainerStyle={styles.analyzingPageContent}>
-      <Layout style={[styles.contentContainer, { minHeight: 0, maxHeight: undefined, justifyContent: 'center', alignItems: 'center' }]}> 
-        <Layout style={[styles.analyzingImageContainer, { width: ANALYZE_IMAGE_SIZE, height: ANALYZE_IMAGE_SIZE }]}> 
+      <Layout style={[{ maxWidth: MAIN_MAX_WIDTH, width: '100%', alignSelf: 'center', flex: 1, justifyContent: 'center' }]}> 
+        <Layout style={[styles.contentContainer, { minHeight: 0, maxHeight: undefined, justifyContent: 'center', alignItems: 'center' }]}> 
           {selectedImage && (
-            <Image 
-              source={{ uri: selectedImage.uri }} 
-              style={{
-                width: ANALYZE_IMAGE_SIZE,
-                height: ANALYZE_IMAGE_SIZE,
-                borderRadius: 20,
-              }}
-              resizeMode="cover"
-            />
-          )}
-          <View style={[styles.scanOverlay, { width: ANALYZE_IMAGE_SIZE, height: ANALYZE_IMAGE_SIZE }]}> 
-            <Animated.View style={[
-              {
-                position: 'absolute',
-                left: '50%',
-                width: ANALYZE_IMAGE_SIZE * 0.95,
-                height: 6,
-                borderRadius: 3,
-                shadowColor: '#4f8cff',
-                shadowOffset: { width: 0, height: 0 },
-                shadowOpacity: 0.5,
-                shadowRadius: 12,
-                elevation: 8,
-                opacity: scanLineOpacity,
-                transform: [
-                  { translateX: -(ANALYZE_IMAGE_SIZE * 0.95) / 2 },
-                  {
-                    translateY: scanLinePosition.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0, ANALYZE_IMAGE_SIZE - 6],
-                    })
-                  }
-                ]
-              }
-            ]}>
-              <LinearGradient
-                colors={['#4f8cff', '#4fd1c5']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={{ width: '100%', height: '100%', borderRadius: 3 }}
+            <Layout style={[styles.analyzingImageContainer, { width: ANALYZE_IMAGE_SIZE, height: ANALYZE_IMAGE_SIZE }]}> 
+              <Image 
+                source={{ uri: selectedImage.uri }} 
+                style={{
+                  width: ANALYZE_IMAGE_SIZE,
+                  height: ANALYZE_IMAGE_SIZE,
+                  borderRadius: 20,
+                }}
+                resizeMode="cover"
               />
-            </Animated.View>
-            {/* Brackets inset to match border radius visually */}
-            <View style={[styles.scanCornerTopLeft, { top: 20, left: 20 }]} />
-            <View style={[styles.scanCornerTopRight, { top: 20, right: 20 }]} />
-            <View style={[styles.scanCornerBottomLeft, { bottom: 20, left: 20 }]} />
-            <View style={[styles.scanCornerBottomRight, { bottom: 20, right: 20 }]} />
-          </View>
-        </Layout>
-        <Layout style={styles.loadingContainer}>
-          <Spinner size='large' />
-          <Text category='h6' style={styles.loadingText}>
-            Detecting faces and analyzing age...
-          </Text>
-          <Text category='c1' style={styles.loadingSubtext}>
-            Using Harvard FaceAge, DeepFace + OpenAI models
-          </Text>
+              <View style={[styles.scanOverlay, { width: ANALYZE_IMAGE_SIZE, height: ANALYZE_IMAGE_SIZE }]}> 
+                <Animated.View style={[
+                  {
+                    position: 'absolute',
+                    left: '50%',
+                    width: ANALYZE_IMAGE_SIZE * 0.95,
+                    height: 6,
+                    borderRadius: 3,
+                    shadowColor: '#4f8cff',
+                    shadowOffset: { width: 0, height: 0 },
+                    shadowOpacity: 0.5,
+                    shadowRadius: 12,
+                    elevation: 8,
+                    opacity: scanLineOpacity,
+                    transform: [
+                      { translateX: -(ANALYZE_IMAGE_SIZE * 0.95) / 2 },
+                      {
+                        translateY: scanLinePosition.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0, ANALYZE_IMAGE_SIZE - 6],
+                        })
+                      }
+                    ]
+                  }
+                ]}>
+                  <LinearGradient
+                    colors={['#4f8cff', '#4fd1c5']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={{ width: '100%', height: '100%', borderRadius: 3 }}
+                  />
+                </Animated.View>
+                {/* Brackets inset to match border radius visually */}
+                <View style={[styles.scanCornerTopLeft, { top: 20, left: 20 }]} />
+                <View style={[styles.scanCornerTopRight, { top: 20, right: 20 }]} />
+                <View style={[styles.scanCornerBottomLeft, { bottom: 20, left: 20 }]} />
+                <View style={[styles.scanCornerBottomRight, { bottom: 20, right: 20 }]} />
+              </View>
+            </Layout>
+          )}
+          <Layout style={styles.loadingContainer}>
+            <Spinner size='large' />
+            <Text category='h6' style={styles.loadingText}>
+              Detecting faces and analyzing age...
+            </Text>
+            <Text category='c1' style={styles.loadingSubtext}>
+              Using Harvard FaceAge, DeepFace + OpenAI models
+            </Text>
+          </Layout>
         </Layout>
       </Layout>
-      <AppFooter onShowModal={(contentType) => { setModalContent(contentType); setModalVisible(true); }} />
+      <AppFooter 
+        onShowModal={(contentType) => { setModalContent(contentType); setModalVisible(true); }} 
+        onShowInfo={() => setInfoVisible(true)}
+      />
     </ScrollView>
   );
 
@@ -1256,7 +1273,10 @@ function AppContent() {
             Try Another Photo
           </Button>
         </Layout>
-        <AppFooter onShowModal={(contentType) => { setModalContent(contentType); setModalVisible(true); }} />
+        <AppFooter 
+          onShowModal={(contentType) => { setModalContent(contentType); setModalVisible(true); }} 
+          onShowInfo={() => setInfoVisible(true)}
+        />
       </Layout>
     </ScrollView>
   );
@@ -1300,7 +1320,7 @@ function AppContent() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="auto" backgroundColor="#ffffff" barStyle="dark-content" />
-      <AppHeader />
+      <AppHeader onShowInfo={() => setInfoVisible(true)} />
       <Layout style={styles.fullScreen}>
         {currentStep === 1 && renderStep1()}
         {currentStep === 2 && renderStep2()}
