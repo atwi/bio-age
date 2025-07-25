@@ -12,6 +12,7 @@ import {
   View,
   Share,
   TouchableOpacity,
+  Linking,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as ImagePicker from 'expo-image-picker';
@@ -146,9 +147,7 @@ const AppHeader = React.memo(function AppHeader() {
     if (Platform.OS === 'web') {
       window.open(emailUrl, '_self');
     } else {
-      // For mobile, you might want to use Linking.openURL
-      console.log('Open email: alexthorburnwinsor@gmail.com');
-      // TODO: Add Linking.openURL(emailUrl) when you import Linking
+      Linking.openURL(emailUrl);
     }
   };
 
@@ -191,9 +190,7 @@ const AppFooter = ({ onShowModal }) => {
     if (Platform.OS === 'web') {
       window.open(emailUrl, '_self');
     } else {
-      // For mobile, you might want to use Linking.openURL
-      console.log('Open email: alexthorburnwinsor@gmail.com');
-      // TODO: Add Linking.openURL(emailUrl) when you import Linking
+      Linking.openURL(emailUrl);
     }
   };
 
@@ -1052,8 +1049,6 @@ function AppContent() {
                           width: 200,
                           height: 200,
                           borderRadius: 20,
-                          borderWidth: 10,
-                          borderColor: '#fff',
                           shadowColor: '#000',
                           shadowOffset: { width: 0, height: 4 },
                           shadowOpacity: 0.1,
@@ -1587,7 +1582,7 @@ const styles = StyleSheet.create({
   faceCropContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginVertical: 24,
+    marginVertical: 12,
     backgroundColor: 'transparent',
     position: 'relative',
   },
