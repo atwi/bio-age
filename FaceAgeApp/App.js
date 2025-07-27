@@ -1363,8 +1363,8 @@ function AppContent() {
                         left: 0,
                         right: 0,
                         bottom: 0,
-                        backgroundColor: 'rgba(255, 255, 255, 0.7)',
-                        backdropFilter: 'blur(4px)',
+                        backgroundColor: 'rgba(255, 255, 255, 0.85)',
+                        backdropFilter: 'blur(6px)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -1372,18 +1372,40 @@ function AppContent() {
                       }}>
                         <View style={{
                           alignItems: 'center',
-                          padding: 20,
-                          maxWidth: 200,
+                          padding: 24,
+                          maxWidth: 240,
+                          backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                          borderRadius: 16,
+                          shadowColor: '#000',
+                          shadowOffset: { width: 0, height: 8 },
+                          shadowOpacity: 0.12,
+                          shadowRadius: 16,
+                          elevation: 8,
+                          borderWidth: 1,
+                          borderColor: 'rgba(255, 255, 255, 0.8)',
                         }}>
+                          <View style={{
+                            width: 48,
+                            height: 48,
+                            borderRadius: 24,
+                            backgroundColor: 'rgba(79, 140, 255, 0.1)',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            marginBottom: 16,
+                          }}>
+                            <Text style={{ fontSize: 20 }}>🔒</Text>
+                          </View>
+                          
                           <Text style={{
                             fontSize: 16,
                             fontWeight: '600',
                             color: '#333',
                             textAlign: 'center',
-                            marginBottom: 8,
+                            marginBottom: 10,
                           }}>
-                            🔒 Detailed Analysis
+                            Want to see more details?
                           </Text>
+                          
                           <Text style={{
                             fontSize: 13,
                             color: '#666',
@@ -1391,19 +1413,20 @@ function AppContent() {
                             marginBottom: 20,
                             lineHeight: 18,
                           }}>
-                            Sign up to see detailed breakdown of skin texture, hair, and facial features
+                            Sign up to see detailed breakdown of skin texture, hair, and facial features. We're in beta and would love your feedback!
                           </Text>
+                          
                           <TouchableOpacity
                             style={{
                               backgroundColor: '#4f8cff',
                               paddingVertical: 12,
                               paddingHorizontal: 24,
-                              borderRadius: 25,
+                              borderRadius: 20,
                               shadowColor: '#4f8cff',
-                              shadowOffset: { width: 0, height: 4 },
-                              shadowOpacity: 0.3,
-                              shadowRadius: 8,
-                              elevation: 4,
+                              shadowOffset: { width: 0, height: 2 },
+                              shadowOpacity: 0.2,
+                              shadowRadius: 4,
+                              elevation: 3,
                             }}
                             onPress={() => handleSignIn('google')}
                           >
@@ -1413,9 +1436,18 @@ function AppContent() {
                               fontWeight: '600',
                               textAlign: 'center',
                             }}>
-                              Sign Up to View
+                              Sign Up for Beta
                             </Text>
                           </TouchableOpacity>
+                          
+                          <Text style={{
+                            fontSize: 11,
+                            color: '#888',
+                            textAlign: 'center',
+                            marginTop: 10,
+                          }}>
+                            Free • No spam • Just feedback
+                          </Text>
                         </View>
                       </View>
                     )}
@@ -1456,11 +1488,11 @@ function AppContent() {
             Try Another Photo
           </Button>
         </Layout>
-        <AppFooter 
-          onShowModal={(contentType) => { setModalContent(contentType); setModalVisible(true); }} 
-          onShowInfo={() => setInfoVisible(true)}
-        />
       </Layout>
+      <AppFooter 
+        onShowModal={(contentType) => { setModalContent(contentType); setModalVisible(true); }} 
+        onShowInfo={() => setInfoVisible(true)}
+      />
     </ScrollView>
   );
 
@@ -2207,11 +2239,13 @@ const styles = StyleSheet.create({
   footer: {
     paddingVertical: 24,
     paddingHorizontal: 20,
-  },
-  footerContent: {
     maxWidth: MAIN_MAX_WIDTH,
     width: '100%',
     alignSelf: 'center',
+    marginTop: 20,
+  },
+  footerContent: {
+    width: '100%',
   },
   footerLinks: {
     flexDirection: 'row',
