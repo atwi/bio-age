@@ -36,7 +36,7 @@ TrueAge uses advanced AI models to estimate your biological and perceived age fr
 
 ## 🚀 Live Demo
 
-**Web App**: [https://your-railway-app.railway.app](https://your-railway-app.railway.app)
+**Web App**: [https://trueage.app](https://trueage.app)
 
 **Mobile**: Download the Expo app and scan the QR code from the development server
 
