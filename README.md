@@ -1,122 +1,250 @@
-# 📱 TrueAge
+# 🧬 TrueAge - AI Age Estimation App
 
-TrueAge uses advanced AI models to estimate your biological age and perceived age from a single facial photo. Upload your selfie to discover insights about your health and aging, powered by state-of-the-art deep learning and facial analysis technology.
+TrueAge uses advanced AI models to estimate your biological and perceived age from facial photos. Built with React Native/Expo, featuring Firebase authentication and powered by Harvard FaceAge, DeepFace, and OpenAI GPT-4o Vision models.
 
 ## 🌟 Features
 
-- **Dual Age Estimation**: Uses both Harvard FaceAge (used by TrueAge) and DeepFace models for accurate predictions
-- **Face Detection**: Automatic face detection using MTCNN
-- **Mobile Optimized**: Responsive design for mobile devices
-- **Multiple Input Methods**: Upload images or take photos directly
-- **Results Download**: Download age estimation results as text files
+### 🤖 **Multi-Model AI Analysis**
+- **Harvard FaceAge**: Research-grade biological age estimation (best for 40+ years)
+- **DeepFace**: General-purpose facial age analysis with VGG-Face architecture
+- **ChatGPT Vision (GPT-4o)**: Human-like age perception with detailed explanations
+- **Mean Age Calculation**: Averaged results across all models
+
+### 📱 **Cross-Platform Mobile App**
+- **React Native/Expo**: Works on iOS, Android, and Web
+- **Camera Integration**: Take photos directly or upload from gallery
+- **Responsive Design**: Optimized for all screen sizes
+- **Native-like UI**: Full-screen camera with face-framing guide
+
+### 🔐 **User Authentication & Data**
+- **Firebase Authentication**: Google and Apple sign-in
+- **User Profiles**: Automatic account creation and management
+- **Analysis History**: Save and retrieve past results
+- **Cloud Storage**: Secure image and data storage
+
+### 🎨 **Modern UI/UX**
+- **UI Kitten Components**: Consistent, professional design
+- **Glassmorphism Effects**: Modern visual styling
+- **Animated Scanning**: Real-time analysis feedback
+- **Beta-Focused Messaging**: Community-oriented for feedback collection
+
+### 📊 **Detailed Analysis**
+- **Age Factors Breakdown**: Skin texture, tone, hair, and facial volume analysis
+- **Confidence Scoring**: Quality assessment for each detection
+- **Face Mesh Visualization**: Advanced facial landmark detection
+- **Shareable Results**: Export and share analysis results
 
 ## 🚀 Live Demo
 
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://share.streamlit.io/yourusername/bio-age/main/streamlit_app.py)
+**Web App**: [https://your-railway-app.railway.app](https://your-railway-app.railway.app)
 
-## 🛠️ Installation
+**Mobile**: Download the Expo app and scan the QR code from the development server
 
-### Local Development
+## 🛠️ Installation & Setup
 
-1. Clone the repository:
+### Prerequisites
+- Node.js 18+ and npm/yarn
+- Expo CLI (`npm install -g @expo/cli`)
+- Firebase project with Authentication enabled
+- OpenAI API key
+- Python backend server (for AI models)
+
+### 1. Clone Repository
 ```bash
-git clone https://github.com/yourusername/bio-age.git
-cd bio-age
+git clone https://github.com/atwi/bio-age.git
+cd bio-age/FaceAgeApp
 ```
 
-2. Create a virtual environment:
+### 2. Install Dependencies
 ```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+npm install
+# or
+yarn install
 ```
 
-3. Install dependencies:
+### 3. Firebase Configuration
+1. Create a Firebase project at [console.firebase.google.com](https://console.firebase.google.com)
+2. Enable Authentication with Google and Apple providers
+3. Enable Firestore Database and Storage
+4. Copy your Firebase config to `firebase.js`:
+
+```javascript
+const firebaseConfig = {
+  apiKey: "your-api-key",
+  authDomain: "your-project.firebaseapp.com",
+  projectId: "your-project-id",
+  storageBucket: "your-project.firebasestorage.app",
+  messagingSenderId: "your-sender-id",
+  appId: "your-app-id"
+};
+```
+
+### 4. Backend Server Setup
 ```bash
+# In the root directory
 pip install -r requirements.txt
+
+# Set environment variables
+export OPENAI_API_KEY="your-openai-api-key"
+export ENABLE_DEEPFACE=true
+export LOAD_HARVARD_MODEL=true
+export PORT=8001
+
+# Run the Python backend
+python api_backend.py
 ```
 
-4. Set up environment variables:
+### 5. Start Development Server
 ```bash
-# Create a .env file with your configuration
-echo "OPENAI_API_KEY=your_openai_api_key_here" > .env
-echo "ENABLE_DEEPFACE=true" >> .env
-echo "LOAD_HARVARD_MODEL=true" >> .env
+# In FaceAgeApp directory
+npx expo start
+
+# For web development
+npx expo start --web
+
+# For mobile development
+npx expo start --tunnel  # Use tunnel for external device testing
 ```
 
-**Environment Variables:**
-- `OPENAI_API_KEY`: Your OpenAI API key for ChatGPT age estimation
-- `ENABLE_DEEPFACE`: Set to `false` to disable DeepFace (useful for cloud deployments with limited resources)
-- `LOAD_HARVARD_MODEL`: Set to `false` to disable Harvard model
-- `PORT`: Server port (default: 8000)
+## 🏗️ Architecture
 
-5. Run the application:
+### Frontend (React Native/Expo)
+- **Framework**: React Native with Expo managed workflow
+- **UI Library**: UI Kitten for consistent components
+- **State Management**: React hooks and context
+- **Navigation**: Single-page app with step-based navigation
+- **Authentication**: Firebase Auth with Google/Apple providers
+- **Database**: Firestore for user data and analysis history
+
+### Backend (Python FastAPI)
+- **Framework**: FastAPI for high-performance API
+- **AI Models**: 
+  - Harvard FaceAge (TensorFlow)
+  - DeepFace library
+  - OpenAI GPT-4o Vision API
+- **Face Detection**: MTCNN for robust face detection
+- **Image Processing**: OpenCV and PIL for preprocessing
+
+### Deployment
+- **Frontend**: Railway/Vercel for web deployment
+- **Mobile**: Expo Application Services (EAS) for app store builds
+- **Backend**: Railway for Python API hosting
+- **Database**: Firebase (Firestore + Storage)
+
+## 📱 Usage
+
+### 1. **Take or Upload Photo**
+- Use the camera button for live photo capture
+- Choose from gallery to upload existing photos
+- Face-framing guide helps with optimal positioning
+
+### 2. **AI Analysis**
+- Automatic face detection and cropping
+- Parallel processing across multiple AI models
+- Real-time scanning animation during analysis
+
+### 3. **View Results**
+- Age estimates from Harvard, DeepFace, and ChatGPT models
+- Mean age calculation across all models
+- Detailed breakdown of aging factors (premium feature)
+
+### 4. **Account Features** (Beta Users)
+- Sign up with Google or Apple
+- Automatic saving of analysis history
+- Access to detailed aging factor breakdowns
+- Community feedback collection
+
+## 🔧 Configuration
+
+### Environment Variables (.env)
 ```bash
-streamlit run streamlit_app.py
+# Backend API
+OPENAI_API_KEY=your_openai_api_key
+ENABLE_DEEPFACE=true
+LOAD_HARVARD_MODEL=true
+PORT=8001
+
+# Firebase (configured in firebase.js)
+# See Firebase setup section above
 ```
 
-### Cloud Deployment
+### App Configuration (app.json)
+```json
+{
+  "expo": {
+    "name": "TrueAge",
+    "slug": "trueage",
+    "platforms": ["ios", "android", "web"],
+    "version": "1.0.0"
+  }
+}
+```
 
-This app is optimized for Streamlit Cloud deployment:
+## 🧪 Development
 
-1. Fork this repository
-2. Connect your GitHub account to [Streamlit Cloud](https://share.streamlit.io)
-3. Deploy directly from your GitHub repository
+### Running Tests
+```bash
+# Frontend tests
+npm test
 
-## 🔧 Technical Details
+# Backend tests
+pytest
+```
 
-### Models Used
+### Building for Production
+```bash
+# Web build
+npx expo export:web
 
-- **Harvard FaceAge (used by TrueAge)**: Research-grade model for precise age estimation
-- **DeepFace**: Industry-standard model with robust performance
-- **ChatGPT Vision**: AI-powered human-like age perception
-- **MTCNN**: Face detection and alignment
-
-### Technology Stack
-
-- **Frontend**: Streamlit
-- **Backend**: TensorFlow/Keras 2.13.0
-- **Computer Vision**: OpenCV, PIL
-- **Face Detection**: MTCNN
-- **Age Estimation**: DeepFace 0.0.93
-
-### Requirements
-
-- Python 3.11.3
-- TensorFlow 2.13.0
-- Compatible with Streamlit Cloud
-
-## 📝 Usage
-
-1. **Upload Image**: Choose an image file (JPG, JPEG, PNG)
-2. **Take Photo**: Use your device's camera
-3. **View Results**: See age estimates from both models
-4. **Download**: Save results as a text file
-
-## 🎯 Accuracy
-
-The app provides dual age estimates:
-- Harvard FaceAge (used by TrueAge): Research-grade precision
-- DeepFace: Robust across different demographics
+# Mobile builds (requires EAS CLI)
+eas build --platform ios
+eas build --platform android
+```
 
 ## 🤝 Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
+We're in beta and actively seeking feedback! Here's how to contribute:
+
+1. **Fork the repository**
+2. **Create a feature branch**: `git checkout -b feature/amazing-feature`
+3. **Make your changes** with clear commit messages
+4. **Test thoroughly** on multiple platforms
+5. **Submit a pull request** with detailed description
+
+### Contribution Areas
+- UI/UX improvements
+- Additional AI model integrations
+- Performance optimizations
+- Accessibility enhancements
+- Documentation improvements
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 
-- Harvard FaceAge research team (used by TrueAge)
-- DeepFace library contributors
-- Streamlit team for the amazing framework
+- **Harvard FaceAge Research Team** - For their groundbreaking age estimation model
+- **DeepFace Contributors** - For the robust face analysis library
+- **OpenAI** - For GPT-4o Vision API capabilities
+- **Firebase Team** - For authentication and database services
+- **Expo Team** - For the excellent React Native development platform
+- **UI Kitten** - For beautiful, consistent UI components
 
 ## 🔗 Links
 
-- [Streamlit Documentation](https://docs.streamlit.io)
-- [DeepFace Library](https://github.com/serengil/deepface)
-- [TensorFlow](https://tensorflow.org) 
+- **Live App**: [https://your-app.railway.app](https://your-app.railway.app)
+- **Firebase Console**: [https://console.firebase.google.com](https://console.firebase.google.com)
+- **Expo Documentation**: [https://docs.expo.dev](https://docs.expo.dev)
+- **React Native**: [https://reactnative.dev](https://reactnative.dev)
+- **UI Kitten**: [https://akveo.github.io/react-native-ui-kitten](https://akveo.github.io/react-native-ui-kitten)
+
+## 📞 Support
+
+- **Issues**: [GitHub Issues](https://github.com/atwi/bio-age/issues)
+- **Email**: alexthorburnwinsor@gmail.com
+- **Beta Feedback**: We're actively collecting user feedback for improvements!
+
+---
+
+**Built with ❤️ for the Reddit community and age estimation research** 
