@@ -224,27 +224,11 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🙏 Acknowledgments
 
-- **Harvard FaceAge Research Team** - For their groundbreaking age estimation model
-- **DeepFace Contributors** - For the robust face analysis library
-- **OpenAI** - For GPT-4o Vision API capabilities
-- **Firebase Team** - For authentication and database services
-- **Expo Team** - For the excellent React Native development platform
-- **UI Kitten** - For beautiful, consistent UI components
-
-## 🔗 Links
-
-- **Live App**: [https://your-app.railway.app](https://your-app.railway.app)
-- **Firebase Console**: [https://console.firebase.google.com](https://console.firebase.google.com)
-- **Expo Documentation**: [https://docs.expo.dev](https://docs.expo.dev)
-- **React Native**: [https://reactnative.dev](https://reactnative.dev)
-- **UI Kitten**: [https://akveo.github.io/react-native-ui-kitten](https://akveo.github.io/react-native-ui-kitten)
-
-## 📞 Support
-
-- **Issues**: [GitHub Issues](https://github.com/atwi/bio-age/issues)
-- **Email**: alexthorburnwinsor@gmail.com
-- **Beta Feedback**: We're actively collecting user feedback for improvements!
+- **Harvard FaceAge Research Team** - Age estimation model
+- **DeepFace Contributors** - Face analysis library
+- **OpenAI** - GPT-4o Vision API capabilities
+- **Firebase Team** - Authentication and database services
+- **Expo Team** - React Native development platform
+- **UI Kitten** - UI components
 
 ---
-
-**Built with ❤️ for the Reddit community and age estimation research** 
