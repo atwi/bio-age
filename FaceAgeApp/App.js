@@ -1,4 +1,4 @@
-import React, { useState, useEffect, Fragment, useRef } from 'react';
+import React, { useState, useEffect, Fragment, useRef, Suspense, lazy } from 'react';
 import {
   StyleSheet,
   Image,
@@ -48,6 +48,7 @@ import {
   TopNavigationAction,
 } from '@ui-kitten/components';
 import logo from './assets/logo.png';
+import LoadingSpinner from './components/LoadingSpinner';
 
 const { width, height } = Dimensions.get('window');
 const MAIN_MAX_WIDTH = 500;
@@ -61,17 +62,17 @@ const getApiBaseUrl = () => {
   if (typeof window !== 'undefined' && window.location) {
     // Web environment
     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-      return 'http://localhost:8001/api';
+      return 'http://localhost:8000/api';
     } else {
       return '/api';
     }
   } else if (Constants.manifest?.debuggerHost) {
     // Expo Go (mobile) - get Metro Bundler IP
     const debuggerHost = Constants.manifest.debuggerHost.split(':')[0];
-    return `http://${debuggerHost}:8001/api`;
+    return `http://${debuggerHost}:8000/api`;
   } else {
     // Fallback
-    return 'http://192.168.96.123:8001/api';
+    return 'http://192.168.96.123:8000/api';
   }
 };
 
@@ -374,6 +375,11 @@ function AppContent() {
       if (response.ok) {
         const data = await response.json();
         setApiHealth(data);
+        
+        // If models are still loading, check again in 2 seconds
+        if (data.models_loading) {
+          setTimeout(() => checkApiHealth(), 2000);
+        }
       } else {
         setApiHealth({ status: 'error', message: 'API not responding' });
       }
@@ -1017,6 +1023,7 @@ function AppContent() {
           onPress={takePhoto}
           accessoryLeft={CameraIcon}
           size='large'
+          disabled={apiHealth?.models_loading && !apiHealth?.ready_for_analysis}
         >
           Take A Photo
         </Button>
@@ -1027,10 +1034,13 @@ function AppContent() {
           accessoryLeft={ImageIcon}
           size='large'
           status='basic'
+          disabled={apiHealth?.models_loading && !apiHealth?.ready_for_analysis}
         >
           Choose From Gallery
         </Button>
       </Layout>
+      
+      {renderApiStatus()}
 
       <AppFooter 
         onShowModal={(contentType) => { setModalContent(contentType); setModalVisible(true); }} 
@@ -1466,7 +1476,9 @@ function AppContent() {
 
   const renderApiStatus = () => (
     <Layout style={{ alignItems: 'center', marginTop: 8 }}>
-      <Text style={{ fontSize: 11, color: '#888', marginBottom: 6, fontWeight: '600', letterSpacing: 0.5 }}>Model Status</Text>
+      <Text style={{ fontSize: 11, color: '#888', marginBottom: 6, fontWeight: '600', letterSpacing: 0.5 }}>
+        {apiHealth?.models_loading ? 'Loading Models...' : 'Model Status'}
+      </Text>
       <Layout style={{
         flexDirection: 'row',
         gap: 8,
@@ -1486,6 +1498,11 @@ function AppContent() {
                 <Spinner size='tiny' status='primary' style={{ width: 15, height: 15 }} />
                 <Text style={{ fontSize: 12, fontWeight: '600', marginLeft: 3, color: '#888' }}>Loading...</Text>
               </>
+            ) : apiHealth?.models_loading && !apiHealth?.models?.[model] ? (
+              <>
+                <Spinner size='tiny' status='primary' style={{ width: 15, height: 15 }} />
+                <Text style={{ fontSize: 12, fontWeight: '600', marginLeft: 3, color: '#888' }}>{MODEL_LABELS[model]}</Text>
+              </>
             ) : (
               <>
                 <Text style={{ fontSize: 15, color: apiHealth?.models?.[model] ? '#4CAF50' : '#f44336', fontWeight: 'bold' }}>
@@ -1497,6 +1514,11 @@ function AppContent() {
           </Layout>
         ))}
       </Layout>
+      {apiHealth?.models_loading && (
+        <Text style={{ fontSize: 10, color: '#666', marginTop: 4, textAlign: 'center' }}>
+          Server ready • Models loading in background
+        </Text>
+      )}
     </Layout>
   );
 
@@ -1510,9 +1532,11 @@ function AppContent() {
         onSignOut={handleSignOut}
       />
       <Layout style={styles.fullScreen}>
-        {currentStep === 1 && renderStep1()}
-        {currentStep === 2 && renderStep2()}
-        {currentStep === 3 && renderStep3()}
+        <Suspense fallback={<LoadingSpinner message="Loading TrueAge..." />}>
+          {currentStep === 1 && renderStep1()}
+          {currentStep === 2 && renderStep2()}
+          {currentStep === 3 && renderStep3()}
+        </Suspense>
       </Layout>
       {renderInfoModal()}
       {renderContentModal()}

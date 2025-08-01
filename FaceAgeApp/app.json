@@ -29,6 +29,18 @@
     },
     "web": {
       "favicon": "./assets/logo.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "web": {
+            "optimization": {
+              "splitChunks": true
+            }
+          }
+        }
+      ]
+    ]
   }
 }

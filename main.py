@@ -29,6 +29,8 @@ import traceback
 import psutil
 import mediapipe as mp
 import cv2
+import asyncio
+from threading import Thread
 
 # Global variables for lazy loading
 detector = None
@@ -67,8 +69,8 @@ if IS_RAILWAY:
     os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
 
 # Add startup delay for Railway
-if IS_RAILWAY:
-    time.sleep(5)  # Give Railway time to initialize
+# if IS_RAILWAY:
+    #time.sleep(5)  # Give Railway time to initialize
 
 def log_memory_usage(context=""):
     mem = psutil.Process(os.getpid()).memory_info().rss / 1024 ** 2
@@ -90,6 +92,55 @@ class AnalyzeResponse(BaseModel):
     success: bool
     faces: List[FaceResult]
     message: str
+
+def background_load_models():
+    """Load models in background thread - non-blocking"""
+    global detector, harvard_model, deepface_ready, models_loading
+    
+    if models_loading or (detector is not None and (harvard_model is not None or not LOAD_HARVARD) and (deepface_ready or not ENABLE_DEEPFACE)):
+        return
+    
+    models_loading = True
+    logger.info("🔄 Background loading models...")
+    
+    try:
+        # Load face detector first (smallest)
+        if detector is None:
+            logger.info("Loading face detector...")
+            from mtcnn import MTCNN
+            detector = MTCNN()
+            logger.info("✅ Face detector loaded")
+            gc.collect()
+        
+        # Load Harvard model if enabled
+        if LOAD_HARVARD and harvard_model is None:
+            logger.info("Loading Harvard model...")
+            harvard_model = load_harvard_model()
+            if harvard_model:
+                logger.info("✅ Harvard model loaded")
+            else:
+                logger.warning("⚠️ Harvard model failed to load, continuing without it")
+            gc.collect()
+        
+        # Test DeepFace last (largest) - only if enabled
+        if ENABLE_DEEPFACE and not deepface_ready:
+            logger.info("Initializing DeepFace...")
+            deepface_ready = test_deepface()
+            if deepface_ready:
+                logger.info("✅ DeepFace initialized")
+            else:
+                logger.warning("⚠️ DeepFace failed to initialize, continuing without it")
+            gc.collect()
+        elif not ENABLE_DEEPFACE:
+            logger.info("🚫 DeepFace disabled by configuration")
+            deepface_ready = True  # Mark as ready to skip loading
+        
+        models_loading = False
+        logger.info("✅ Background model loading complete!")
+        
+    except Exception as e:
+        logger.error(f"❌ Background model loading failed: {e}")
+        models_loading = False
 
 def lazy_load_models():
     """Lazy load models only when needed"""
@@ -437,28 +488,32 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add compression middleware for better performance
+from fastapi.middleware.gzip import GZipMiddleware
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
 @app.get("/")
 async def root():
-    """Root endpoint serving the React Native web build"""
-    web_build_path = "FaceAgeApp/dist"
+    """Root endpoint serving the React Native web build - serves immediately"""
+    web_build_path = "FaceAgeApp/web-build"
     if os.path.exists(f"{web_build_path}/index.html"):
         return FileResponse(f"{web_build_path}/index.html")
-    return {"message": "TrueAge API", "status": "running"}
+    return {"message": "TrueAge API", "status": "running", "server_ready": True}
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
+    """Health check endpoint - responds immediately"""
     return {
         "status": "healthy", 
         "timestamp": time.time(),
         "environment": "railway" if IS_RAILWAY else "local",
-        "ready": True
+        "server_ready": True,
+        "models_loading": models_loading
     }
 
 @app.get("/api/health")
 async def api_health_check():
-    # Ensure models are loaded before reporting status
-    lazy_load_models()
+    # Don't trigger model loading, just report current status
     harvard_status = harvard_model is not None
     deepface_status = deepface_ready if 'deepface_ready' in globals() else False
     chatgpt_status = bool(os.environ.get('OPENAI_API_KEY'))
@@ -468,7 +523,9 @@ async def api_health_check():
             "harvard": harvard_status,
             "deepface": deepface_status,
             "chatgpt": chatgpt_status
-        }
+        },
+        "models_loading": models_loading,
+        "ready_for_analysis": harvard_status or deepface_status
     }
 
 @app.post("/api/analyze-face", response_model=AnalyzeResponse)
@@ -667,10 +724,20 @@ async def facemesh_overlay(file: UploadFile = File(...)):
         encoded = base64.b64encode(buffer).decode('utf-8')
         return {"image_base64": encoded}
 
-# Mount static files for React Native web build
-web_build_path = "FaceAgeApp/dist"
+# Mount static files for React Native web build with caching
+class CachedStaticFiles(StaticFiles):
+    def file_response(self, *args, **kwargs) -> FileResponse:
+        response = super().file_response(*args, **kwargs)
+        # Add caching headers for better performance
+        if any(args[0].endswith(ext) for ext in ['.js', '.css', '.png', '.jpg', '.ico']):
+            response.headers["Cache-Control"] = "public, max-age=31536000"  # 1 year
+        else:
+            response.headers["Cache-Control"] = "public, max-age=3600"  # 1 hour
+        return response
+
+web_build_path = "FaceAgeApp/web-build"
 if os.path.exists(web_build_path):
-    app.mount("/", StaticFiles(directory=web_build_path, html=True), name="static")
+    app.mount("/", CachedStaticFiles(directory=web_build_path, html=True), name="static")
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
@@ -681,13 +748,15 @@ if __name__ == "__main__":
     print(f"🔧 Railway environment: {IS_RAILWAY}")
     print(f"📊 Harvard model enabled: {LOAD_HARVARD}")
     print(f"🤖 DeepFace enabled: {ENABLE_DEEPFACE}")
-    print(f"⚡ Using lazy loading for models")
+    print(f"⚡ Using background model loading for instant startup")
     print('OpenAI version at runtime:', openai.__version__)
     
-    # Add startup delay for Railway to ensure proper initialization
-    if IS_RAILWAY:
-        print("⏳ Railway startup delay: 30 seconds")
-        time.sleep(30)
+    # Start background model loading immediately (non-blocking)
+    print("🔄 Starting background model loading...")
+    model_thread = Thread(target=background_load_models, daemon=True)
+    model_thread.start()
+    
+    print("✅ Server starting immediately - models loading in background")
     
     uvicorn.run(
         app, 
