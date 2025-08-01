@@ -508,13 +508,13 @@ async def analyze_face(file: UploadFile = File(...)):
             )
         
         # Filter faces with confidence >= 0.9
-        high_confidence_faces = [f for f in faces if f['confidence'] >= 0.9]
+        high_confidence_faces = [f for f in faces if f['confidence'] >= 0.95]
         
         if not high_confidence_faces:
             return AnalyzeResponse(
                 success=False,
                 faces=[],
-                message="No high-confidence faces detected (≥90% confidence required)"
+                message="No high-confidence faces detected (≥95% confidence required)"
             )
         
         results = []
@@ -525,11 +525,24 @@ async def analyze_face(file: UploadFile = File(...)):
                 x, y, w, h = face['box']
                 x, y = max(0, x), max(0, y)
                 logger.info(f"Face {i}: extracting crop...")
+                # Original crop for Harvard/DeepFace (existing logic)
                 face_crop = img_array[y:y+h, x:x+w]
-                logger.info(f"Face {i}: crop shape={face_crop.shape}, dtype={face_crop.dtype}")
+                
+                # Enhanced crop for ChatGPT with safe clipping + square padding
+                H, W = img_array.shape[:2]
+                x = max(0, x); y = max(0, y)
+                x2 = min(W, x + w); y2 = min(H, y + h)
+                cx, cy = (x + x2)//2, (y + y2)//2
+                side = int(1.3 * max(x2 - x, y2 - y))  # 30% padding for hair/context
+                x1 = max(0, cx - side//2); y1 = max(0, cy - side//2)
+                x2 = min(W, x1 + side); y2 = min(H, y1 + side)
+                chatgpt_face_crop = img_array[y1:y2, x1:x2]
+                
+                logger.info(f"Face {i}: original crop shape={face_crop.shape}, ChatGPT crop shape={chatgpt_face_crop.shape}")
                 try:
                     logger.info(f"Face {i}: converting crop to base64...")
-                    face_pil = Image.fromarray(face_crop)
+                    # Use the padded ChatGPT crop for display (includes hair/context)
+                    face_pil = Image.fromarray(chatgpt_face_crop)
                     face_buffer = BytesIO()
                     face_pil.save(face_buffer, format='PNG')
                     face_base64 = base64.b64encode(face_buffer.getvalue()).decode('utf-8')
@@ -586,7 +599,13 @@ async def analyze_face(file: UploadFile = File(...)):
                 chatgpt_error = None
                 try:
                     logger.info(f"Face {i}: Calling estimate_age_chatgpt...")
-                    chatgpt_response = estimate_age_chatgpt(face_base64)
+                    # Create base64 from ChatGPT-specific crop (with padding for hair/context)
+                    chatgpt_face_pil = Image.fromarray(chatgpt_face_crop)
+                    chatgpt_face_buffer = BytesIO()
+                    chatgpt_face_pil.save(chatgpt_face_buffer, format='PNG')
+                    chatgpt_face_base64 = base64.b64encode(chatgpt_face_buffer.getvalue()).decode('utf-8')
+                    
+                    chatgpt_response = estimate_age_chatgpt(chatgpt_face_base64)
                     chatgpt_result = chatgpt_response.get('function_args')
                     chatgpt_raw = chatgpt_response.get('raw_response')
                     chatgpt_fallback = chatgpt_response.get('fallback_text')
