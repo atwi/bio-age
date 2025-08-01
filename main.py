@@ -48,6 +48,7 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 IS_RAILWAY = os.environ.get('RAILWAY_ENVIRONMENT') == 'production'
 LOAD_HARVARD = os.environ.get('LOAD_HARVARD_MODEL', 'true').lower() == 'true'
 ENABLE_DEEPFACE = os.environ.get('ENABLE_DEEPFACE', 'true').lower() == 'true'
+REQUIRE_AUTH = os.environ.get('REQUIRE_AUTH', 'false').lower() == 'true'
 
 # Debug logging for environment variables - FORCE REDEPLOY 2024-12-19
 print(f"🔍 DEBUG: RAILWAY_ENVIRONMENT = {os.environ.get('RAILWAY_ENVIRONMENT', 'NOT_SET')}")
@@ -55,6 +56,8 @@ print(f"🔍 DEBUG: ENABLE_DEEPFACE env var = {os.environ.get('ENABLE_DEEPFACE',
 print(f"🔍 DEBUG: ENABLE_DEEPFACE parsed = {ENABLE_DEEPFACE}")
 print(f"🔍 DEBUG: LOAD_HARVARD_MODEL env var = {os.environ.get('LOAD_HARVARD_MODEL', 'NOT_SET')}")
 print(f"🔍 DEBUG: LOAD_HARVARD_MODEL parsed = {LOAD_HARVARD}")
+print(f"🔍 DEBUG: REQUIRE_AUTH env var = {os.environ.get('REQUIRE_AUTH', 'NOT_SET')}")
+print(f"🔍 DEBUG: REQUIRE_AUTH parsed = {REQUIRE_AUTH}")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -525,7 +528,8 @@ async def api_health_check():
             "chatgpt": chatgpt_status
         },
         "models_loading": models_loading,
-        "ready_for_analysis": harvard_status or deepface_status
+        "ready_for_analysis": harvard_status or deepface_status,
+        "require_auth": REQUIRE_AUTH
     }
 
 @app.post("/api/analyze-face", response_model=AnalyzeResponse)

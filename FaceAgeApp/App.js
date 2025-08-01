@@ -1367,8 +1367,8 @@ function AppContent() {
                       })}
                     </View>
 
-                    {/* Sign Up Overlay when not signed in */}
-                    {!user && (
+                    {/* Sign Up Overlay when not signed in AND auth is required */}
+                    {!user && apiHealth?.require_auth && (
                       <View style={{
                         position: 'absolute',
                         top: 0,
