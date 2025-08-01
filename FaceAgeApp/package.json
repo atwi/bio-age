@@ -8,7 +8,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "build:web": "expo export:web",
-    "build:web:optimize": "expo export:web --minify"
+    "build:web:optimize": "expo export:web"
   },
   "dependencies": {
     "@eva-design/eva": "^2.2.0",

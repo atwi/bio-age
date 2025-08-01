@@ -35,7 +35,7 @@ RUN python -c "import gdown; import zipfile; import os; print('📥 Downloading 
 # Build the React Native web app with optimization
 RUN cd FaceAgeApp && \
     npm install && \
-    npx expo export:web --minify
+    npx expo export:web
 
 # Expose the port
 EXPOSE 8000
