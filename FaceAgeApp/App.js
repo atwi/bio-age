@@ -1321,11 +1321,11 @@ function AppContent() {
                       )}
                     </View>
                     
-                    {/* Blurred content when not signed in */}
+                    {/* Blurred content when not signed in AND auth is required */}
                     <View style={[
                       { 
-                        filter: user ? 'none' : 'blur(2px)',
-                        opacity: user ? 1 : 0.8,
+                        filter: (user || !apiHealth?.require_auth) ? 'none' : 'blur(2px)',
+                        opacity: (user || !apiHealth?.require_auth) ? 1 : 0.8,
                         transition: 'all 0.3s ease',
                       }
                     ]}>
