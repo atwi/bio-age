@@ -62,17 +62,19 @@ const getApiBaseUrl = () => {
   if (typeof window !== 'undefined' && window.location) {
     // Web environment
     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-      return 'http://localhost:8000/api';
+      return 'http://localhost:8001/api';
     } else {
       return '/api';
     }
   } else if (Constants.manifest?.debuggerHost) {
     // Expo Go (mobile) - get Metro Bundler IP
     const debuggerHost = Constants.manifest.debuggerHost.split(':')[0];
-    return `http://${debuggerHost}:8000/api`;
+    console.log('🔍 Mobile API URL:', `http://${debuggerHost}:8001/api`);
+    return `http://${debuggerHost}:8001/api`;
   } else {
-    // Fallback
-    return 'http://192.168.96.123:8000/api';
+    // For production mobile builds
+    console.log('🔍 Production API URL:', 'https://trueage.app/api');
+    return 'https://trueage.app/api';
   }
 };
 
