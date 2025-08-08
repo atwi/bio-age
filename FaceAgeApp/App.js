@@ -275,6 +275,7 @@ function AppContent() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const liveOverlayRef = useRef(null);
+  const dotAlphaRef = useRef(0); // for smooth fade-in/out of landmark dots
   const [guidanceMessage, setGuidanceMessage] = useState('Align your face in the frame');
   const [isAligned, setIsAligned] = useState(false);
   
@@ -587,6 +588,8 @@ function AppContent() {
           if (!faces.length) {
             setGuidanceMessage('Align your face in the frame');
             setIsAligned(false);
+            // Smoothly fade dots out when face is lost
+            dotAlphaRef.current += (0 - dotAlphaRef.current) * 0.2;
             return;
           }
           // Adaptive guidance: size/position feedback
@@ -624,25 +627,61 @@ function AppContent() {
           // Update UI message (rendered in the top overlay, not on canvas)
           setGuidanceMessage(message);
 
-          // Subtle cyan dots (very low alpha, tiny radius)
+          // Subtle face outline (convex hull), no dots
           try {
             const landmarks = faces[0];
             if (landmarks && landmarks.length) {
-              ctx.save();
-              ctx.globalAlpha = 0.38;
-              const r = Math.max(1.2, Math.min(2.0, Math.min(w, h) * 0.0022));
-              ctx.fillStyle = 'rgba(0,255,255,1)';
-              ctx.shadowColor = 'rgba(0,255,255,0.35)';
-              ctx.shadowBlur = 1;
-              for (let i = 0; i < landmarks.length; i++) {
-                const lx = landmarks[i].x * w;
-                const ly = landmarks[i].y * h;
+              const ptsPx = landmarks.map(({ x, y }) => ({ x: x * w, y: y * h }));
+              const hullPts = hull(ptsPx);
+              if (hullPts.length >= 3) {
+                ctx.save();
+                // Smooth fade towards target alpha based on alignment
+                const alignedNow = (message === 'Hold steady');
+                const targetAlpha = alignedNow ? 0.5 : 0.34;
+                dotAlphaRef.current += (targetAlpha - dotAlphaRef.current) * 0.18;
+                ctx.globalAlpha = Math.max(0, Math.min(1, dotAlphaRef.current));
+                // Subtle, crisp stroke in brand cyan
+                ctx.lineWidth = Math.max(1, Math.min(2, Math.min(w, h) * 0.002));
+                ctx.strokeStyle = 'rgba(79,209,197,1)';
+                ctx.lineJoin = 'round';
+                ctx.lineCap = 'round';
                 ctx.beginPath();
-                ctx.arc(lx, ly, r, 0, Math.PI * 2);
-                ctx.fill();
+                ctx.moveTo(hullPts[0].x, hullPts[0].y);
+                for (let i = 1; i < hullPts.length; i++) {
+                  ctx.lineTo(hullPts[i].x, hullPts[i].y);
+                }
+                ctx.closePath();
+                ctx.stroke();
+                ctx.restore();
               }
-              ctx.restore();
             }
+          } catch (_) {}
+
+          // Subtle dark layer outside the face oval (keeps inside clear)
+          try {
+            const padX = 30; // fixed padding in pixels (left & right)
+            const padY = 30; // fixed padding in pixels (top & bottom)
+            const maxOvalW = Math.max(0, w - 2 * padX);
+            const maxOvalH = Math.max(0, h - 2 * padY);
+            const aspect = FACE_HEIGHT / FACE_WIDTH; // keep face oval proportions (~1.35)
+            let ovalW = maxOvalW;
+            let ovalH = ovalW * aspect;
+            if (ovalH > maxOvalH) {
+              ovalH = maxOvalH;
+              ovalW = ovalH / aspect;
+            }
+            const cx = w / 2;
+            const cy = h / 2;
+            const rx = ovalW / 2;
+            const ry = ovalH / 2;
+            ctx.save();
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
+            ctx.beginPath();
+            // Full-rect + ellipse with even-odd rule to fill outside oval only
+            ctx.rect(0, 0, w, h);
+            ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+            ctx.fill('evenodd');
+            ctx.restore();
           } catch (_) {}
         });
 
@@ -960,9 +999,7 @@ function AppContent() {
         </View>
         
         {/* Face Outline Overlay */}
-        <View style={styles.faceOutlineContainer}>
-          <View style={[styles.faceOutlineOval, { borderColor: isAligned ? 'rgba(0, 220, 140, 1)' : 'rgba(0, 255, 255, 0.55)' }]} />
-        </View>
+        <View style={styles.faceOutlineContainer} />
         
         {/* Bottom overlay with buttons */}
         <View style={styles.cameraBottomOverlay}>
