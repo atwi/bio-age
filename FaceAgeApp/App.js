@@ -285,6 +285,7 @@ function AppContent() {
   const [showApiTooltip, setShowApiTooltip] = useState(false);
   const [expandedModel, setExpandedModel] = useState(null);
   const [faceMeshOverlays, setFaceMeshOverlays] = useState({});
+
   const [modalContent, setModalContent] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
   
@@ -377,6 +378,15 @@ function AppContent() {
       if (response.ok) {
         const data = await response.json();
         setApiHealth(data);
+        
+        // Console log model status instead of displaying in UI
+        console.log('🔍 Model Status:', {
+          harvard: data.models?.harvard ? '✅ Ready' : '❌ Not Ready',
+          deepface: data.models?.deepface ? '✅ Ready' : '❌ Not Ready', 
+          chatgpt: data.models?.chatgpt ? '✅ Ready' : '❌ Not Ready',
+          loading: data.models_loading ? '🔄 Loading...' : '✅ Complete',
+          ready_for_analysis: data.ready_for_analysis ? '✅ Ready' : '❌ Not Ready'
+        });
         
         // If models are still loading, check again in 2 seconds
         if (data.models_loading) {
@@ -747,6 +757,8 @@ function AppContent() {
       const blob = new Blob([byteArray], { type: 'image/jpeg' });
       const formData = new FormData();
       formData.append('file', blob, 'face.jpg');
+      
+      // Always use the combined visualization endpoint
       const response = await fetch(`${API_BASE_URL.replace('/api', '')}/facemesh-overlay`, {
         method: 'POST',
         body: formData,
@@ -1042,7 +1054,7 @@ function AppContent() {
         </Button>
       </Layout>
       
-      {renderApiStatus()}
+      {/* Model status removed from UI - check console for status */}
 
       <AppFooter 
         onShowModal={(contentType) => { setModalContent(contentType); setModalVisible(true); }} 
@@ -1163,6 +1175,8 @@ function AppContent() {
                     {!isSingleFace && (
                       <Text category='label' style={styles.sectionTitle}>FACE DETECTION</Text>
                     )}
+                    
+
                     {face.face_crop_base64 && (
                       <Layout style={styles.faceCropContainer}>
                         <View style={{
@@ -1476,53 +1490,7 @@ function AppContent() {
     </ScrollView>
   );
 
-  const renderApiStatus = () => (
-    <Layout style={{ alignItems: 'center', marginTop: 8 }}>
-      <Text style={{ fontSize: 11, color: '#888', marginBottom: 6, fontWeight: '600', letterSpacing: 0.5 }}>
-        {apiHealth?.models_loading ? 'Loading Models...' : 'Model Status'}
-      </Text>
-      <Layout style={{
-        flexDirection: 'row',
-        gap: 8,
-        paddingVertical: 0,
-        paddingHorizontal: 0,
-        borderRadius: 0,
-        backgroundColor: 'transparent',
-        borderWidth: 0,
-        justifyContent: 'center',
-        alignItems: 'center',
-        minHeight: 20,
-      }}>
-        {['harvard', 'deepface', 'chatgpt'].map((model) => (
-          <Layout key={model} style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 2 }}>
-            {apiHealth === null ? (
-              <>
-                <Spinner size='tiny' status='primary' style={{ width: 15, height: 15 }} />
-                <Text style={{ fontSize: 12, fontWeight: '600', marginLeft: 3, color: '#888' }}>Loading...</Text>
-              </>
-            ) : apiHealth?.models_loading && !apiHealth?.models?.[model] ? (
-              <>
-                <Spinner size='tiny' status='primary' style={{ width: 15, height: 15 }} />
-                <Text style={{ fontSize: 12, fontWeight: '600', marginLeft: 3, color: '#888' }}>{MODEL_LABELS[model]}</Text>
-              </>
-            ) : (
-              <>
-                <Text style={{ fontSize: 15, color: apiHealth?.models?.[model] ? '#4CAF50' : '#f44336', fontWeight: 'bold' }}>
-                  {apiHealth?.models?.[model] ? '✔' : '✖'}
-                </Text>
-                <Text style={{ fontSize: 12, fontWeight: '600', marginLeft: 3, color: '#222' }}>{MODEL_LABELS[model]}</Text>
-              </>
-            )}
-          </Layout>
-        ))}
-      </Layout>
-      {apiHealth?.models_loading && (
-        <Text style={{ fontSize: 10, color: '#666', marginTop: 4, textAlign: 'center' }}>
-          Server ready • Models loading in background
-        </Text>
-      )}
-    </Layout>
-  );
+  // renderApiStatus function removed - model status now logged to console
 
   return (
     <SafeAreaView style={styles.container}>
@@ -1535,9 +1503,9 @@ function AppContent() {
       />
       <Layout style={styles.fullScreen}>
         <Suspense fallback={<LoadingSpinner message="Loading TrueAge..." />}>
-          {currentStep === 1 && renderStep1()}
-          {currentStep === 2 && renderStep2()}
-          {currentStep === 3 && renderStep3()}
+        {currentStep === 1 && renderStep1()}
+        {currentStep === 2 && renderStep2()}
+        {currentStep === 3 && renderStep3()}
         </Suspense>
       </Layout>
       {renderInfoModal()}
@@ -1646,6 +1614,30 @@ const styles = StyleSheet.create({
     borderWidth: 0,
     marginBottom: 10,
     paddingVertical: 14,
+  },
+  facialRegionsToggle: {
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  toggleButton: {
+    backgroundColor: '#f6f8fa',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#e1e5e9',
+  },
+  toggleButtonActive: {
+    backgroundColor: '#4f8cff',
+    borderColor: '#4f8cff',
+  },
+  toggleButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6b7280',
+  },
+  toggleButtonTextActive: {
+    color: '#ffffff',
   },
   analyzingImageContainer: {
     alignItems: 'center',

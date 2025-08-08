@@ -47,6 +47,7 @@ def check_environment():
         'RAILWAY_ENVIRONMENT': os.environ.get('RAILWAY_ENVIRONMENT', 'NOT_SET'),
         'LOAD_HARVARD_MODEL': os.environ.get('LOAD_HARVARD_MODEL', 'NOT_SET'),
         'ENABLE_DEEPFACE': os.environ.get('ENABLE_DEEPFACE', 'NOT_SET'),
+        'ENABLE_CHATGPT': os.environ.get('ENABLE_CHATGPT', 'NOT_SET'),
         'OPENAI_API_KEY': 'SET' if os.environ.get('OPENAI_API_KEY') else 'NOT_SET'
     }
     

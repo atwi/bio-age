@@ -1,0 +1,44 @@
+# Cursor Rules for Bio Age Project
+
+## CRITICAL: Process Management
+- **NEVER kill user processes or browsers** without explicit permission
+- **NEVER use `kill -9` or similar commands** that force-terminate processes
+- **ALWAYS ask before terminating any running processes**
+- **Check if port is in use** before starting server, but ask user how to handle conflicts
+
+## Server Management
+- When port 8001 is in use, ask user: "Port 8001 is already in use. Would you like me to: 1) Stop the existing process, 2) Use a different port, or 3) You handle it manually?"
+- **Never automatically kill processes** - always get user confirmation first
+- If server fails to start, suggest alternatives rather than force-killing
+
+## Code Changes
+- **Always explain what changes you're making** before making them
+- **Test changes incrementally** rather than making large changes at once
+- **Preserve user's work** - don't overwrite files without clear explanation
+
+## Communication
+- **Be explicit about what commands you're running**
+- **Explain the purpose of each command**
+- **Ask for permission before making system-level changes**
+- **Provide clear status updates** about what's happening
+
+## Project-Specific Guidelines
+- This is a facial analysis application with MediaPipe integration
+- Handle MediaPipe import issues carefully
+- Preserve existing facial region detection logic
+- Maintain the medical-tech UI design aesthetic
+- Test changes thoroughly before suggesting them
+
+## Error Handling
+- **Don't panic when errors occur** - analyze and explain them
+- **Provide clear error explanations** and suggested solutions
+- **Ask user preference** for how to handle errors
+- **Don't make assumptions** about what the user wants
+
+## File Management
+- **Don't delete files** without explicit permission
+- **Backup important changes** when making modifications
+- **Explain file structure changes** clearly
+- **Preserve user's existing work**
+
+Remember: The user's workflow and open applications are more important than the assistant's convenience. Always prioritize user experience and ask before making disruptive changes. 

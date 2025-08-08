@@ -48,12 +48,15 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 IS_RAILWAY = os.environ.get('RAILWAY_ENVIRONMENT') == 'production'
 LOAD_HARVARD = os.environ.get('LOAD_HARVARD_MODEL', 'true').lower() == 'true'
 ENABLE_DEEPFACE = os.environ.get('ENABLE_DEEPFACE', 'true').lower() == 'true'
+ENABLE_CHATGPT = os.environ.get('ENABLE_CHATGPT', 'true').lower() == 'true'
 REQUIRE_AUTH = os.environ.get('REQUIRE_AUTH', 'false').lower() == 'true'
 
 # Debug logging for environment variables - FORCE REDEPLOY 2024-12-19
 print(f"🔍 DEBUG: RAILWAY_ENVIRONMENT = {os.environ.get('RAILWAY_ENVIRONMENT', 'NOT_SET')}")
 print(f"🔍 DEBUG: ENABLE_DEEPFACE env var = {os.environ.get('ENABLE_DEEPFACE', 'NOT_SET')}")
 print(f"🔍 DEBUG: ENABLE_DEEPFACE parsed = {ENABLE_DEEPFACE}")
+print(f"🔍 DEBUG: ENABLE_CHATGPT env var = {os.environ.get('ENABLE_CHATGPT', 'NOT_SET')}")
+print(f"🔍 DEBUG: ENABLE_CHATGPT parsed = {ENABLE_CHATGPT}")
 print(f"🔍 DEBUG: LOAD_HARVARD_MODEL env var = {os.environ.get('LOAD_HARVARD_MODEL', 'NOT_SET')}")
 print(f"🔍 DEBUG: LOAD_HARVARD_MODEL parsed = {LOAD_HARVARD}")
 print(f"🔍 DEBUG: REQUIRE_AUTH env var = {os.environ.get('REQUIRE_AUTH', 'NOT_SET')}")
@@ -440,6 +443,109 @@ def estimate_age_chatgpt(image_base64: str) -> dict:
         result['error'] = str(e)
         return result
 
+# Facial landmark regions using MediaPipe's official predefined connection sets
+def build_facial_regions_from_connections():
+    """Build facial regions from MediaPipe's official connection sets"""
+    import mediapipe as mp
+    
+    # Get the official MediaPipe Face Mesh connections
+    mp_face_mesh = mp.solutions.face_mesh
+    FACEMESH_LIPS = mp_face_mesh.FACEMESH_LIPS
+    FACEMESH_LEFT_EYE = mp_face_mesh.FACEMESH_LEFT_EYE
+    FACEMESH_RIGHT_EYE = mp_face_mesh.FACEMESH_RIGHT_EYE
+    FACEMESH_LEFT_EYEBROW = mp_face_mesh.FACEMESH_LEFT_EYEBROW
+    FACEMESH_RIGHT_EYEBROW = mp_face_mesh.FACEMESH_RIGHT_EYEBROW
+    FACEMESH_FACE_OVAL = mp_face_mesh.FACEMESH_FACE_OVAL
+    FACEMESH_NOSE = mp_face_mesh.FACEMESH_NOSE
+    
+    # Hair segmentation using MediaPipe Image Segmenter
+    from mediapipe.tasks import python
+    from mediapipe.tasks.python import vision
+    
+    def get_hair_segmentation():
+        """Get hair segmentation using MediaPipe Image Segmenter"""
+        base_options = python.BaseOptions(model_asset_path='https://storage.googleapis.com/mediapipe-models/image_segmenter/hair_segmenter/float32/latest/hair_segmenter.tflite')
+        options = vision.ImageSegmenterOptions(base_options=base_options, output_category_mask=True)
+        return vision.ImageSegmenter.create_from_options(options)
+    
+    def connections_to_ordered_loop(connections):
+        """Convert connection pairs to ordered loop of indices"""
+        if not connections:
+            return []
+        
+        # Convert frozenset to list of tuples
+        connection_list = list(connections)
+        
+        # Build adjacency list
+        adj = {}
+        for start, end in connection_list:
+            if start not in adj:
+                adj[start] = []
+            if end not in adj:
+                adj[end] = []
+            adj[start].append(end)
+            adj[end].append(start)
+        
+        # Find ordered loop
+        visited = set()
+        loop = []
+        
+        def dfs(node, path):
+            if len(path) > 1 and node == path[0]:
+                return path
+            if node in visited:
+                return None
+            visited.add(node)
+            path.append(node)
+            
+            for neighbor in adj.get(node, []):
+                if neighbor not in path or (len(path) > 2 and neighbor == path[0]):
+                    result = dfs(neighbor, path)
+                    if result:
+                        return result
+            return None
+        
+        # Start from first connection
+        if connection_list:
+            start_node = connection_list[0][0]
+            loop = dfs(start_node, [])
+        
+        return loop if loop else [conn[0] for conn in connection_list]
+    
+    return {
+    "eyes": {
+            "left_eye": connections_to_ordered_loop(FACEMESH_LEFT_EYE),
+            "right_eye": connections_to_ordered_loop(FACEMESH_RIGHT_EYE),
+            "left_eyebrow": connections_to_ordered_loop(FACEMESH_LEFT_EYEBROW),
+            "right_eyebrow": connections_to_ordered_loop(FACEMESH_RIGHT_EYEBROW),
+            "color": (0, 0, 255),  # Red (BGR format) - Highly visible
+            "style": "dots"  # Unified dots style
+    },
+    "nose": {
+            "nose": connections_to_ordered_loop(FACEMESH_NOSE),
+            "color": (0, 255, 255),  # Yellow (BGR format) - Highly visible
+            "style": "dots"  # Unified dots style
+    },
+    "mouth": {
+            "lips": connections_to_ordered_loop(FACEMESH_LIPS),
+            "color": (0, 255, 0),  # Green (BGR format) - Highly visible
+            "style": "dots"  # Unified dots style
+    },
+    "face_contour": {
+            "face_oval": connections_to_ordered_loop(FACEMESH_FACE_OVAL),
+            "color": (255, 0, 0),  # Blue (BGR format) - Highly visible
+            "style": "dots"  # Unified dots style
+        },
+        "hair": {
+            "hair_mask": [],  # Will be populated by hair segmentation
+            "color": (128, 0, 128),  # Purple (BGR format) - Highly visible
+            "style": "dots"  # Unified dots style
+        }
+    }
+
+# Generate facial regions from MediaPipe connections
+FACIAL_REGIONS = build_facial_regions_from_connections()
+
 def draw_facemesh(image_bytes):
     nparr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
@@ -470,6 +576,426 @@ def draw_facemesh(image_bytes):
         return encoded
     except Exception as e:
         logger.error(f"FaceMesh error: {e}")
+        blank = np.zeros_like(img)
+        _, buffer = cv2.imencode('.jpg', blank)
+        encoded = base64.b64encode(buffer).decode('utf-8')
+        return encoded
+
+def detect_hair_segmentation(image_bytes):
+    """Detect hair using MediaPipe Image Segmenter"""
+    try:
+        from mediapipe.tasks import python
+        from mediapipe.tasks.python import vision
+        from mediapipe import Image
+        import urllib.request
+        import os
+        
+        logger.info("Starting hair segmentation...")
+        
+        # Download the hair segmentation model if not already present
+        model_url = 'https://storage.googleapis.com/mediapipe-models/image_segmenter/hair_segmenter/float32/latest/hair_segmenter.tflite'
+        model_path = 'hair_segmenter.tflite'
+        
+        if not os.path.exists(model_path):
+            logger.info(f"Downloading hair segmentation model from {model_url}")
+            urllib.request.urlretrieve(model_url, model_path)
+            logger.info("Hair segmentation model downloaded successfully")
+        else:
+            logger.info("Using cached hair segmentation model")
+        
+        # Create image segmenter for hair detection
+        base_options = python.BaseOptions(model_asset_path=model_path)
+        options = vision.ImageSegmenterOptions(base_options=base_options, output_category_mask=True)
+        segmenter = vision.ImageSegmenter.create_from_options(options)
+        
+        logger.info("Hair segmenter created successfully")
+        
+        # Convert image bytes to MediaPipe Image
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        mp_image = Image(image_format=mp.ImageFormat.SRGB, data=rgb_img)
+        
+        logger.info(f"Image converted: shape={img.shape}")
+        
+        # Segment hair
+        segmentation_result = segmenter.segment(mp_image)
+        category_mask = segmentation_result.category_mask
+        
+        logger.info(f"Segmentation result: mask shape={category_mask.numpy_view().shape}")
+        
+        # Get hair mask (category 1 is hair)
+        hair_mask = (category_mask.numpy_view() == 1).astype(np.uint8) * 255
+        
+        # Debug: log hair mask info
+        hair_pixels = np.sum(hair_mask > 0)
+        total_pixels = hair_mask.shape[0] * hair_mask.shape[1]
+        hair_percentage = (hair_pixels / total_pixels) * 100
+        logger.info(f"Hair segmentation: {hair_pixels} hair pixels ({hair_percentage:.1f}% of image)")
+        
+        # Validate hair detection - if too much or too little hair is detected, it's likely wrong
+        # Typical hair percentages: 5-25% for people with hair, <2% for bald people
+        if hair_percentage > 30 or hair_percentage < 2:
+            logger.warning(f"Hair segmentation likely incorrect: {hair_percentage:.1f}% detected (expected 2-30%)")
+            return None
+        
+        return hair_mask
+    except Exception as e:
+        logger.error(f"Hair segmentation error: {e}")
+        import traceback
+        logger.error(f"Hair segmentation traceback: {traceback.format_exc()}")
+        return None
+
+def find_lowest_y_for_each_x(points, x_range, tolerance=2, smoothing_level="medium"):
+    """
+    Find the lowest Y coordinate for each X coordinate with configurable smoothing.
+    This creates a clean bottom edge by ensuring only one Y value per X.
+    
+    Args:
+        points: Array of [x, y] coordinates
+        x_range: Array of X coordinates to sample
+        tolerance: How close X coordinates can be to be considered "at the same X"
+        smoothing_level: "low", "medium", "high", or "ultra" for different smoothing intensities
+    
+    Returns:
+        Array of [x, y] coordinates with exactly one Y per X, smoothed according to level
+    """
+    # Convert points to numpy array if it isn't already
+    points = np.array(points, dtype=np.int32)
+    
+    # Create a dictionary to store the lowest Y for each X
+    x_to_lowest_y = {}
+    
+    # For each X in our range, find the lowest Y
+    for x in x_range:
+        x_int = int(x)
+        
+        # Find all points at this X coordinate (within tolerance)
+        points_at_x = []
+        for point in points:
+            if abs(point[0] - x_int) <= tolerance:
+                points_at_x.append(point)
+        
+        if points_at_x:
+            # Use the lowest Y (highest pixel value) among points at this X
+            lowest_y = max(point[1] for point in points_at_x)
+            x_to_lowest_y[x_int] = lowest_y
+    
+    # Convert back to array format, sorted by X
+    result = []
+    for x in sorted(x_to_lowest_y.keys()):
+        result.append([x, x_to_lowest_y[x]])
+    
+    result = np.array(result, dtype=np.int32)
+    logger.info(f"find_lowest_y_for_each_x: input {len(points)} points, output {len(result)} points")
+    
+    # Apply smoothing based on level
+    if len(result) > 3:
+        try:
+            from scipy.ndimage import gaussian_filter1d
+            
+            # Define smoothing parameters based on level
+            smoothing_params = {
+                "low": {"sigma": 0.5, "spline_s": 50},
+                "medium": {"sigma": 1.0, "spline_s": 100},
+                "high": {"sigma": 1.5, "spline_s": 200},
+                "ultra": {"sigma": 2.0, "spline_s": 300}
+            }
+            
+            params = smoothing_params.get(smoothing_level, smoothing_params["medium"])
+            
+            # Apply Gaussian smoothing to Y coordinates
+            smoothed_y = gaussian_filter1d(result[:, 1].astype(float), sigma=params["sigma"])
+            result = np.column_stack([result[:, 0], smoothed_y.astype(int)])
+            
+        except ImportError:
+            # If scipy is not available, skip smoothing
+            pass
+    
+    return result
+
+def draw_facial_regions(image_bytes):
+    """Draw facial regions with clean, minimal, medical-tech style + face mesh dots"""
+    nparr = np.frombuffer(image_bytes, np.uint8)
+    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    overlay = img.copy()
+    mp_face_mesh = mp.solutions.face_mesh
+    
+    try:
+        with mp_face_mesh.FaceMesh(static_image_mode=True) as face_mesh:
+            results = face_mesh.process(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+            if results.multi_face_landmarks:
+                for face_landmarks in results.multi_face_landmarks:
+                    # FIRST: Draw all face mesh dots (like in draw_facemesh)
+                    n_points = len(face_landmarks.landmark)
+                    for idx, landmark in enumerate(face_landmarks.landmark):
+                        x = int(landmark.x * img.shape[1])
+                        y = int(landmark.y * img.shape[0])
+                        # Gradient from blue (#4f8cff) to green (#4fd1c5)
+                        t = idx / n_points
+                        r = int((0x4f * (1-t)) + (0x4f * t))
+                        g = int((0x8c * (1-t)) + (0xd1 * t))
+                        b = int((0xff * (1-t)) + (0xc5 * t))
+                        color = (b, g, r, 180)  # OpenCV uses BGR, alpha=180/255
+                        # Draw semi-transparent dot
+                        cv2.circle(overlay, (x, y), 2, (b, g, r), -1, lineType=cv2.LINE_AA)
+                    
+                    # SECOND: Draw tessellation edges (subtle mesh lines)
+                    from mediapipe.python.solutions.face_mesh_connections import FACEMESH_TESSELATION
+                    h, w = img.shape[:2]
+                    
+                    # Draw tessellation lines (brighter and slightly thicker)
+                    for a, b in FACEMESH_TESSELATION:
+                        if a < len(face_landmarks.landmark) and b < len(face_landmarks.landmark):
+                            pt1 = (int(face_landmarks.landmark[a].x * w), int(face_landmarks.landmark[a].y * h))
+                            pt2 = (int(face_landmarks.landmark[b].x * w), int(face_landmarks.landmark[b].y * h))
+                            cv2.line(overlay, pt1, pt2, (220, 220, 220), 2, cv2.LINE_AA)
+                    
+                    # THIRD: Draw facial region outlines on top of the dots and tessellation
+                    
+                    # Eyes: bright modern light blue outline
+                    eye_color = (255, 255, 0)  # Bright cyan in BGR
+                    for eye_region in ["left_eye", "right_eye"]:
+                        if eye_region in FACIAL_REGIONS["eyes"]:
+                            landmark_indices = FACIAL_REGIONS["eyes"][eye_region]
+                            points = []
+                            
+                            for idx in landmark_indices:
+                                if idx < len(face_landmarks.landmark):
+                                    landmark = face_landmarks.landmark[idx]
+                                    x = int(landmark.x * img.shape[1])
+                                    y = int(landmark.y * img.shape[0])
+                                    points.append([x, y])
+                            
+                            if len(points) > 2:
+                                points = np.array(points, dtype=np.int32)
+                                # Draw smooth outline with proper curve smoothing
+                                if len(points) > 4:
+                                    # Use spline interpolation for smooth curves
+                                    from scipy.interpolate import splprep, splev
+                                    try:
+                                        # Close the curve by adding first point at end
+                                        closed_points = np.vstack([points, points[0]])
+                                        # Fit spline with more smoothing (higher s value)
+                                        tck, u = splprep([closed_points[:, 0], closed_points[:, 1]], s=100, per=True)
+                                        # Generate smooth curve points with more interpolation
+                                        new_points = np.array(splev(np.linspace(0, 1, 200), tck)).T.astype(np.int32)
+                                        cv2.polylines(overlay, [new_points], True, eye_color, 3, cv2.LINE_AA)
+                                    except:
+                                        # Fallback to simple polyline if spline fails
+                                        cv2.polylines(overlay, [points], True, eye_color, 3, cv2.LINE_AA)
+                                else:
+                                    cv2.polylines(overlay, [points], True, eye_color, 3, cv2.LINE_AA)
+                    
+                    # Eyebrows: use lowest point logic for clean bottom edge
+                    eyebrow_color = (255, 255, 0)  # Bright cyan in BGR
+                    for eyebrow_region in ["left_eyebrow", "right_eyebrow"]:
+                        if eyebrow_region in FACIAL_REGIONS["eyes"]:
+                            landmark_indices = FACIAL_REGIONS["eyes"][eyebrow_region]
+                            points = []
+                            
+                            for idx in landmark_indices:
+                                if idx < len(face_landmarks.landmark):
+                                    landmark = face_landmarks.landmark[idx]
+                                    x = int(landmark.x * img.shape[1])
+                                    y = int(landmark.y * img.shape[0])
+                                    points.append([x, y])
+                            
+                            if len(points) > 2:
+                                points = np.array(points, dtype=np.int32)
+                                
+                                # Use the simple function to find lowest Y for each X with high smoothing for eyebrows
+                                min_x = np.min(points[:, 0])
+                                max_x = np.max(points[:, 0])
+                                x_range = np.linspace(min_x, max_x, 60)
+                                logger.info(f"Eyebrow: processing {len(points)} points, X range: {min_x} to {max_x}")
+                                eyebrow_bottom_points = find_lowest_y_for_each_x(points, x_range, tolerance=2, smoothing_level="ultra")
+                                logger.info(f"Eyebrow: function returned {len(eyebrow_bottom_points)} points")
+                                
+                                # Draw the clean eyebrow bottom edge
+                                if len(eyebrow_bottom_points) > 3:
+                                    # Apply spline smoothing for ultra-smooth curves
+                                    try:
+                                        from scipy.interpolate import splprep, splev
+                                        # Fit spline with high smoothing parameter
+                                        tck, u = splprep([eyebrow_bottom_points[:, 0], eyebrow_bottom_points[:, 1]], s=150)
+                                        # Generate very smooth curve with more interpolation points
+                                        new_points = np.array(splev(np.linspace(0, 1, 300), tck)).T.astype(np.int32)
+                                        cv2.polylines(overlay, [new_points], False, eyebrow_color, 3, cv2.LINE_AA)
+                                        logger.info(f"Eyebrow bottom edge drawn with {len(eyebrow_bottom_points)} points, smoothed to 300 points")
+                                    except:
+                                        # Fallback to simple polyline if spline fails
+                                        cv2.polylines(overlay, [eyebrow_bottom_points], False, eyebrow_color, 3, cv2.LINE_AA)
+                                        logger.info(f"Eyebrow bottom edge drawn with {len(eyebrow_bottom_points)} points (no smoothing)")
+                                else:
+                                    logger.warning(f"Not enough eyebrow bottom points: {len(eyebrow_bottom_points)}")
+                    
+                    # Nose: base and bridge using lowest point logic
+                    if "nose" in FACIAL_REGIONS["nose"]:
+                        nose_color = (255, 255, 0)  # Bright cyan in BGR
+                        landmark_indices = FACIAL_REGIONS["nose"]["nose"]
+                        points = []
+                        
+                        for idx in landmark_indices:
+                            if idx < len(face_landmarks.landmark):
+                                landmark = face_landmarks.landmark[idx]
+                                x = int(landmark.x * img.shape[1])
+                                y = int(landmark.y * img.shape[0])
+                                points.append([x, y])
+                        
+                        if len(points) > 2:
+                            points = np.array(points, dtype=np.int32)
+                            
+                            # Draw nose base (bottom edge)
+                            min_x = np.min(points[:, 0])
+                            max_x = np.max(points[:, 0])
+                            x_range = np.linspace(min_x, max_x, 40)
+                            logger.info(f"Nose: processing {len(points)} points, X range: {min_x} to {max_x}")
+                            nose_base_points = find_lowest_y_for_each_x(points, x_range, tolerance=2, smoothing_level="high")
+                            logger.info(f"Nose base: found {len(nose_base_points)} points")
+                            
+                            if len(nose_base_points) > 3:
+                                # Draw the nose base as a single continuous line
+                                # Sort points by X coordinate to ensure proper ordering
+                                nose_base_points = nose_base_points[nose_base_points[:, 0].argsort()]
+                                
+                                # Apply spline smoothing for the nose base
+                                try:
+                                    from scipy.interpolate import splprep, splev
+                                    tck, u = splprep([nose_base_points[:, 0], nose_base_points[:, 1]], s=50)
+                                    new_points = np.array(splev(np.linspace(0, 1, 200), tck)).T.astype(np.int32)
+                                    cv2.polylines(overlay, [new_points], False, nose_color, 3, cv2.LINE_AA)
+                                    logger.info(f"Nose base drawn with {len(nose_base_points)} points, smoothed to 200 points")
+                                except:
+                                    cv2.polylines(overlay, [nose_base_points], False, nose_color, 3, cv2.LINE_AA)
+                                    logger.info(f"Nose base drawn with {len(nose_base_points)} points (no smoothing)")
+                    
+                    # Lips: magenta outline with slight interior shading
+                    if "lips" in FACIAL_REGIONS["mouth"]:
+                        lip_color = (255, 255, 0)  # Bright cyan in BGR
+                        landmark_indices = FACIAL_REGIONS["mouth"]["lips"]
+                        points = []
+                        
+                        for idx in landmark_indices:
+                            if idx < len(face_landmarks.landmark):
+                                landmark = face_landmarks.landmark[idx]
+                                x = int(landmark.x * img.shape[1])
+                                y = int(landmark.y * img.shape[0])
+                                points.append([x, y])
+                        
+                        if len(points) > 2:
+                            points = np.array(points, dtype=np.int32)
+                            # Draw smooth lip outline with proper curve smoothing
+                            if len(points) > 4:
+                                # Use spline interpolation for smooth curves
+                                from scipy.interpolate import splprep, splev
+                                try:
+                                    # Close the curve by adding first point at end
+                                    closed_points = np.vstack([points, points[0]])
+                                    # Fit spline with more smoothing (higher s value)
+                                    tck, u = splprep([closed_points[:, 0], closed_points[:, 1]], s=100, per=True)
+                                    # Generate smooth curve points with more interpolation
+                                    new_points = np.array(splev(np.linspace(0, 1, 200), tck)).T.astype(np.int32)
+                                    cv2.polylines(overlay, [new_points], True, lip_color, 3, cv2.LINE_AA)
+                                except:
+                                    # Fallback to simple polyline if spline fails
+                                    cv2.polylines(overlay, [points], True, lip_color, 3, cv2.LINE_AA)
+                            else:
+                                cv2.polylines(overlay, [points], True, lip_color, 3, cv2.LINE_AA)
+                    
+                    # Face contour: light blue outline
+                    if "face_oval" in FACIAL_REGIONS["face_contour"]:
+                        contour_color = (255, 255, 0)  # Bright cyan in BGR
+                        landmark_indices = FACIAL_REGIONS["face_contour"]["face_oval"]
+                        points = []
+                        
+                        for idx in landmark_indices:
+                            if idx < len(face_landmarks.landmark):
+                                landmark = face_landmarks.landmark[idx]
+                                x = int(landmark.x * img.shape[1])
+                                y = int(landmark.y * img.shape[0])
+                                points.append([x, y])
+                        
+                        if len(points) > 2:
+                            points = np.array(points, dtype=np.int32)
+                            # Draw smooth face contour with proper curve smoothing
+                            if len(points) > 4:
+                                # Use spline interpolation for smooth curves
+                                from scipy.interpolate import splprep, splev
+                                try:
+                                    # Close the curve by adding first point at end
+                                    closed_points = np.vstack([points, points[0]])
+                                    # Fit spline with more smoothing (higher s value)
+                                    tck, u = splprep([closed_points[:, 0], closed_points[:, 1]], s=100, per=True)
+                                    # Generate smooth curve points with more interpolation
+                                    new_points = np.array(splev(np.linspace(0, 1, 200), tck)).T.astype(np.int32)
+                                    cv2.polylines(overlay, [new_points], True, contour_color, 3, cv2.LINE_AA)
+                                except:
+                                    # Fallback to simple polyline if spline fails
+                                    cv2.polylines(overlay, [points], True, contour_color, 3, cv2.LINE_AA)
+                            else:
+                                cv2.polylines(overlay, [points], True, contour_color, 3, cv2.LINE_AA)
+                    
+                    # Hairline: from hair segmentation mask, trace the actual hairline boundary
+                    hair_mask = detect_hair_segmentation(image_bytes)
+                    if hair_mask is not None:
+                        logger.info(f"Drawing hairline: mask shape={hair_mask.shape}")
+                        hair_mask_resized = cv2.resize(hair_mask, (img.shape[1], img.shape[0]))
+                        
+                        # Find the hairline by taking the lowest Y coordinate for each X
+                        hairline_points = []
+                        img_height, img_width = hair_mask_resized.shape
+                        
+                        # Only process the upper portion of the image (forehead area)
+                        max_y = int(img_height * 0.4)  # Upper 40% of image
+                        
+                        for x in range(img_width):
+                            # Find the highest Y coordinate (lowest pixel value) for this X - this is the hairline
+                            highest_y = None
+                            for y in range(max_y):
+                                if hair_mask_resized[y, x] > 0:  # If hair pixel found
+                                    highest_y = y  # Keep updating to find the lowest hair pixel (highest Y)
+                            
+                            if highest_y is not None:
+                                hairline_points.append([x, highest_y])
+                        
+                        # Use the simple function to find lowest Y for each X (for hairline, we want the highest Y)
+                        if len(hairline_points) > 15:
+                            hairline_points = np.array(hairline_points, dtype=np.int32)
+                            # For hairline, we want the highest Y (lowest on screen), so we invert the logic
+                            # The hairline points are already the "lowest" hair pixels, so we use them directly
+                            x_range = np.linspace(0, img_width-1, 100)  # Sample across full width
+                            smoothed_hairline = find_lowest_y_for_each_x(hairline_points, x_range, tolerance=3, smoothing_level="medium")
+                        
+                        # Use the smoothed hairline from our function
+                        if len(smoothed_hairline) > 5:
+                            # Apply final spline smoothing for ultra-smooth curves
+                            hairline_color = (255, 255, 0)  # Bright cyan in BGR
+                            try:
+                                from scipy.interpolate import splprep, splev
+                                # Fit spline with high smoothing parameter
+                                tck, u = splprep([smoothed_hairline[:, 0], smoothed_hairline[:, 1]], s=200)
+                                # Generate very smooth curve with more interpolation points
+                                new_points = np.array(splev(np.linspace(0, 1, 400), tck)).T.astype(np.int32)
+                                cv2.polylines(overlay, [new_points], False, hairline_color, 3, cv2.LINE_AA)
+                                logger.info(f"Ultra-smooth hairline drawn with {len(smoothed_hairline)} points, smoothed to 400 points")
+                            except:
+                                # Fallback to simple polyline if spline fails
+                                cv2.polylines(overlay, [smoothed_hairline], False, hairline_color, 3, cv2.LINE_AA)
+                                logger.info(f"Hairline drawn with {len(smoothed_hairline)} points (no spline smoothing)")
+                        else:
+                            logger.warning(f"Not enough smoothed hairline points: {len(smoothed_hairline)}")
+                    else:
+                        logger.warning("Hair mask is None - hair segmentation failed")
+                
+                # Blend overlay with original for more visible tessellation effect
+                img = cv2.addWeighted(overlay, 0.25, img, 0.75, 0)
+        
+        _, buffer = cv2.imencode('.jpg', img)
+        encoded = base64.b64encode(buffer).decode('utf-8')
+        return encoded
+    except Exception as e:
+        logger.error(f"Facial regions error: {e}")
         blank = np.zeros_like(img)
         _, buffer = cv2.imencode('.jpg', blank)
         encoded = base64.b64encode(buffer).decode('utf-8')
@@ -519,7 +1045,7 @@ async def api_health_check():
     # Don't trigger model loading, just report current status
     harvard_status = harvard_model is not None
     deepface_status = deepface_ready if 'deepface_ready' in globals() else False
-    chatgpt_status = bool(os.environ.get('OPENAI_API_KEY'))
+    chatgpt_status = bool(os.environ.get('OPENAI_API_KEY')) and ENABLE_CHATGPT
     return {
         "status": "healthy",
         "models": {
@@ -529,7 +1055,12 @@ async def api_health_check():
         },
         "models_loading": models_loading,
         "ready_for_analysis": harvard_status or deepface_status,
-        "require_auth": REQUIRE_AUTH
+        "require_auth": REQUIRE_AUTH,
+        "settings": {
+            "enable_deepface": ENABLE_DEEPFACE,
+            "enable_chatgpt": ENABLE_CHATGPT,
+            "load_harvard": LOAD_HARVARD
+        }
     }
 
 @app.post("/api/analyze-face", response_model=AnalyzeResponse)
@@ -658,25 +1189,28 @@ async def analyze_face(file: UploadFile = File(...)):
                 chatgpt_raw = None
                 chatgpt_fallback = None
                 chatgpt_error = None
-                try:
-                    logger.info(f"Face {i}: Calling estimate_age_chatgpt...")
-                    # Create base64 from ChatGPT-specific crop (with padding for hair/context)
-                    chatgpt_face_pil = Image.fromarray(chatgpt_face_crop)
-                    chatgpt_face_buffer = BytesIO()
-                    chatgpt_face_pil.save(chatgpt_face_buffer, format='PNG')
-                    chatgpt_face_base64 = base64.b64encode(chatgpt_face_buffer.getvalue()).decode('utf-8')
-                    
-                    chatgpt_response = estimate_age_chatgpt(chatgpt_face_base64)
-                    chatgpt_result = chatgpt_response.get('function_args')
-                    chatgpt_raw = chatgpt_response.get('raw_response')
-                    chatgpt_fallback = chatgpt_response.get('fallback_text')
-                    chatgpt_error = chatgpt_response.get('error')
-                    logger.info(f"Face {i}: ChatGPT Vision result: {chatgpt_result}")
-                    if chatgpt_error:
-                        logger.error(f"Face {i}: ChatGPT error: {chatgpt_error}")
-                except Exception as e:
-                    logger.error(f"Face {i}: Exception in estimate_age_chatgpt: {e}\n{traceback.format_exc()}")
-                    chatgpt_error = str(e)
+                if ENABLE_CHATGPT:
+                    try:
+                        logger.info(f"Face {i}: Calling estimate_age_chatgpt...")
+                        # Create base64 from ChatGPT-specific crop (with padding for hair/context)
+                        chatgpt_face_pil = Image.fromarray(chatgpt_face_crop)
+                        chatgpt_face_buffer = BytesIO()
+                        chatgpt_face_pil.save(chatgpt_face_buffer, format='PNG')
+                        chatgpt_face_base64 = base64.b64encode(chatgpt_face_buffer.getvalue()).decode('utf-8')
+                        
+                        chatgpt_response = estimate_age_chatgpt(chatgpt_face_base64)
+                        chatgpt_result = chatgpt_response.get('function_args')
+                        chatgpt_raw = chatgpt_response.get('raw_response')
+                        chatgpt_fallback = chatgpt_response.get('fallback_text')
+                        chatgpt_error = chatgpt_response.get('error')
+                        logger.info(f"Face {i}: ChatGPT Vision result: {chatgpt_result}")
+                        if chatgpt_error:
+                            logger.error(f"Face {i}: ChatGPT error: {chatgpt_error}")
+                    except Exception as e:
+                        logger.error(f"Face {i}: Exception in estimate_age_chatgpt: {e}\n{traceback.format_exc()}")
+                        chatgpt_error = str(e)
+                else:
+                    logger.info(f"Face {i}: 🚫 ChatGPT prediction skipped (disabled)")
                 chatgpt_age = None
                 chatgpt_factors = None
                 if chatgpt_result:
@@ -718,7 +1252,8 @@ async def analyze_face(file: UploadFile = File(...)):
 async def facemesh_overlay(file: UploadFile = File(...)):
     try:
         image_bytes = await file.read()
-        result = draw_facemesh(image_bytes)
+        # Use the combined visualization (dots + facial regions) as the default
+        result = draw_facial_regions(image_bytes)
         return {"image_base64": result}
     except Exception as e:
         logger.error(f"/facemesh-overlay error: {e}")
@@ -727,6 +1262,8 @@ async def facemesh_overlay(file: UploadFile = File(...)):
         _, buffer = cv2.imencode('.jpg', blank)
         encoded = base64.b64encode(buffer).decode('utf-8')
         return {"image_base64": encoded}
+
+
 
 # Mount static files for React Native web build with caching
 class CachedStaticFiles(StaticFiles):
@@ -739,9 +1276,27 @@ class CachedStaticFiles(StaticFiles):
             response.headers["Cache-Control"] = "public, max-age=3600"  # 1 hour
         return response
 
+# Check if we're in development mode
+IS_DEVELOPMENT = os.environ.get("DEVELOPMENT", "false").lower() == "true"
+
 web_build_path = "FaceAgeApp/web-build"
-if os.path.exists(web_build_path):
+if os.path.exists(web_build_path) and not IS_DEVELOPMENT:
+    # Production: Serve static build
     app.mount("/", CachedStaticFiles(directory=web_build_path, html=True), name="static")
+    print("🏭 Production mode: Serving static build")
+else:
+    # Development: Serve API only, frontend runs on Expo dev server
+    @app.get("/")
+    async def dev_root():
+        return {
+            "message": "Bio Age API Server",
+            "status": "running",
+            "development": True,
+            "frontend_url": "http://localhost:19006",
+            "api_docs": "/docs",
+            "health": "/api/health"
+        }
+    print("🔧 Development mode: API server only (frontend on Expo dev server)")
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
@@ -752,6 +1307,7 @@ if __name__ == "__main__":
     print(f"🔧 Railway environment: {IS_RAILWAY}")
     print(f"📊 Harvard model enabled: {LOAD_HARVARD}")
     print(f"🤖 DeepFace enabled: {ENABLE_DEEPFACE}")
+    print(f"🤖 ChatGPT enabled: {ENABLE_CHATGPT}")
     print(f"⚡ Using background model loading for instant startup")
     print('OpenAI version at runtime:', openai.__version__)
     

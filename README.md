@@ -161,6 +161,7 @@ npx expo start --tunnel  # Use tunnel for external device testing
 # Backend API
 OPENAI_API_KEY=your_openai_api_key
 ENABLE_DEEPFACE=true
+ENABLE_CHATGPT=true
 LOAD_HARVARD_MODEL=true
 PORT=8001
 
