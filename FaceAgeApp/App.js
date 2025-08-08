@@ -274,6 +274,9 @@ function AppContent() {
   const [webCameraStream, setWebCameraStream] = useState(null);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  const liveOverlayRef = useRef(null);
+  const [guidanceMessage, setGuidanceMessage] = useState('Align your face in the frame');
+  const [isAligned, setIsAligned] = useState(false);
   
   // Animated values for scanning effect
   const scanLinePosition = useRef(new Animated.Value(0)).current;
@@ -523,6 +526,151 @@ function AppContent() {
       }
     };
   }, [showWebCamera]);
+
+  // Lazy-load FaceMesh and render cyan dots only when web camera is open
+  useEffect(() => {
+    if (!(showWebCamera && Platform.OS === 'web')) return;
+    let faceMeshInstance = null;
+    let rafId = 0;
+    let running = true;
+
+    // Compute convex hull (monotonic chain) to avoid interior crossing edges
+    const hull = (pts) => {
+      if (!pts || pts.length < 3) return pts || [];
+      const points = pts.slice().sort((a, b) => (a.x - b.x) || (a.y - b.y));
+      const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+      const lower = [];
+      for (const p of points) {
+        while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+        lower.push(p);
+      }
+      const upper = [];
+      for (let i = points.length - 1; i >= 0; i--) {
+        const p = points[i];
+        while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+        upper.push(p);
+      }
+      upper.pop();
+      lower.pop();
+      return lower.concat(upper);
+    };
+
+    const init = async () => {
+      try {
+        const video = videoRef.current;
+        if (!video) return;
+        const { FaceMesh } = await import('@mediapipe/face_mesh');
+        faceMeshInstance = new FaceMesh({
+          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+        });
+        faceMeshInstance.setOptions({
+          maxNumFaces: 1,
+          refineLandmarks: true,
+          minDetectionConfidence: 0.5,
+          minTrackingConfidence: 0.5,
+        });
+
+        faceMeshInstance.onResults((res) => {
+          const canvas = liveOverlayRef.current;
+          if (!canvas || !video) return;
+          const w = video.videoWidth || 0;
+          const h = video.videoHeight || 0;
+          if (!w || !h) return;
+          const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) ? window.devicePixelRatio : 1;
+          if (canvas.width !== Math.floor(w * dpr)) canvas.width = Math.floor(w * dpr);
+          if (canvas.height !== Math.floor(h * dpr)) canvas.height = Math.floor(h * dpr);
+          const ctx = canvas.getContext('2d');
+          // Normalize drawing coordinates to CSS pixels
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          ctx.clearRect(0, 0, w, h);
+          const faces = res.multiFaceLandmarks || [];
+          if (!faces.length) {
+            setGuidanceMessage('Align your face in the frame');
+            setIsAligned(false);
+            return;
+          }
+          // Adaptive guidance: size/position feedback
+          let message = 'Align your face in the frame';
+          try {
+            const pts = faces[0].map(({ x, y }) => ({ x: x * w, y: y * h }));
+            if (pts.length > 0) {
+              let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+              for (const p of pts) {
+                if (p.x < minX) minX = p.x;
+                if (p.y < minY) minY = p.y;
+                if (p.x > maxX) maxX = p.x;
+                if (p.y > maxY) maxY = p.y;
+              }
+              const faceW = Math.max(1, maxX - minX);
+              const faceH = Math.max(1, maxY - minY);
+              const faceAreaFrac = (faceW * faceH) / (w * h);
+              const cx = (minX + maxX) / 2;
+              const cy = (minY + maxY) / 2;
+              const cxFrac = Math.abs(cx - w / 2) / w;
+              const cyFrac = Math.abs(cy - h / 2) / h;
+              if (faceAreaFrac < 0.12) {
+                message = 'Move closer';
+              } else if (faceAreaFrac > 0.50) {
+                message = 'Move farther';
+              } else if (cxFrac > 0.20 || cyFrac > 0.20) {
+                message = 'Center your face';
+              } else {
+                message = 'Hold steady';
+              }
+              setIsAligned(message === 'Hold steady');
+            }
+          } catch (_) {}
+
+          // Update UI message (rendered in the top overlay, not on canvas)
+          setGuidanceMessage(message);
+
+          // Subtle cyan dots (very low alpha, tiny radius)
+          try {
+            const landmarks = faces[0];
+            if (landmarks && landmarks.length) {
+              ctx.save();
+              ctx.globalAlpha = 0.38;
+              const r = Math.max(1.2, Math.min(2.0, Math.min(w, h) * 0.0022));
+              ctx.fillStyle = 'rgba(0,255,255,1)';
+              ctx.shadowColor = 'rgba(0,255,255,0.35)';
+              ctx.shadowBlur = 1;
+              for (let i = 0; i < landmarks.length; i++) {
+                const lx = landmarks[i].x * w;
+                const ly = landmarks[i].y * h;
+                ctx.beginPath();
+                ctx.arc(lx, ly, r, 0, Math.PI * 2);
+                ctx.fill();
+              }
+              ctx.restore();
+            }
+          } catch (_) {}
+        });
+
+        const loop = async () => {
+          if (!running) return;
+          if (video.readyState >= 2) {
+            await faceMeshInstance.send({ image: video });
+          }
+          rafId = requestAnimationFrame(loop);
+        };
+        rafId = requestAnimationFrame(loop);
+      } catch (e) {
+        console.error('FaceMesh init error:', e);
+      }
+    };
+
+    init();
+    return () => {
+      running = false;
+      if (rafId) cancelAnimationFrame(rafId);
+      try { faceMeshInstance && faceMeshInstance.close && faceMeshInstance.close(); } catch {}
+      const c = liveOverlayRef.current;
+      if (c) {
+        const ctx = c.getContext('2d');
+        ctx && ctx.clearRect(0, 0, c.width || 0, c.height || 0);
+      }
+    };
+  }, [showWebCamera, apiHealth?.settings?.enable_face_fill]);
 
   const analyzeFace = async (imageToAnalyze = selectedImage) => {
     if (!imageToAnalyze) return;
@@ -796,6 +944,10 @@ function AppContent() {
           muted
         />
         <canvas
+          ref={liveOverlayRef}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', transform: 'scaleX(-1)', zIndex: 4 }}
+        />
+        <canvas
           ref={canvasRef}
           style={{ display: 'none' }}
         />
@@ -803,13 +955,13 @@ function AppContent() {
         {/* Top overlay with title */}
         <View style={styles.cameraTopOverlay}>
           <View style={styles.instructionContainer}>
-            <Text style={styles.instructionText}>Align your face in the frame</Text>
+            <Text style={styles.instructionText}>{guidanceMessage}</Text>
           </View>
         </View>
         
         {/* Face Outline Overlay */}
         <View style={styles.faceOutlineContainer}>
-          <View style={styles.faceOutlineOval} />
+          <View style={[styles.faceOutlineOval, { borderColor: isAligned ? 'rgba(0, 220, 140, 1)' : 'rgba(0, 255, 255, 0.55)' }]} />
         </View>
         
         {/* Bottom overlay with buttons */}
@@ -2362,8 +2514,8 @@ const styles = StyleSheet.create({
     height: FACE_HEIGHT,
     borderRadius: FACE_WIDTH * 0.5,
     backgroundColor: 'transparent',
-    borderWidth: 3,
-    borderColor: 'rgba(255, 255, 255, 0.8)',
+    borderWidth: 2,
+    borderColor: 'rgba(0, 255, 255, 0.55)',
     shadowColor: 'rgba(255, 255, 255, 0.5)',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 1,

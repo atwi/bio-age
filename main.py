@@ -50,6 +50,11 @@ LOAD_HARVARD = os.environ.get('LOAD_HARVARD_MODEL', 'true').lower() == 'true'
 ENABLE_DEEPFACE = os.environ.get('ENABLE_DEEPFACE', 'true').lower() == 'true'
 ENABLE_CHATGPT = os.environ.get('ENABLE_CHATGPT', 'true').lower() == 'true'
 REQUIRE_AUTH = os.environ.get('REQUIRE_AUTH', 'false').lower() == 'true'
+# New visualization feature flags (default off for dots-only view)
+ENABLE_FEATURE_OUTLINES = os.environ.get('ENABLE_FEATURE_OUTLINES', 'false').lower() == 'true'
+ENABLE_TESSELLATION = os.environ.get('ENABLE_TESSELLATION', 'false').lower() == 'true'
+ENABLE_HAIR_SEGMENTATION = os.environ.get('ENABLE_HAIR_SEGMENTATION', 'false').lower() == 'true'
+ENABLE_FACE_FILL = os.environ.get('ENABLE_FACE_FILL', 'false').lower() == 'true'
 
 # Debug logging for environment variables - FORCE REDEPLOY 2024-12-19
 print(f"🔍 DEBUG: RAILWAY_ENVIRONMENT = {os.environ.get('RAILWAY_ENVIRONMENT', 'NOT_SET')}")
@@ -61,6 +66,11 @@ print(f"🔍 DEBUG: LOAD_HARVARD_MODEL env var = {os.environ.get('LOAD_HARVARD_M
 print(f"🔍 DEBUG: LOAD_HARVARD_MODEL parsed = {LOAD_HARVARD}")
 print(f"🔍 DEBUG: REQUIRE_AUTH env var = {os.environ.get('REQUIRE_AUTH', 'NOT_SET')}")
 print(f"🔍 DEBUG: REQUIRE_AUTH parsed = {REQUIRE_AUTH}")
+# New flags debug
+print(f"🔍 DEBUG: ENABLE_FEATURE_OUTLINES parsed = {ENABLE_FEATURE_OUTLINES}")
+print(f"🔍 DEBUG: ENABLE_TESSELLATION parsed = {ENABLE_TESSELLATION}")
+print(f"🔍 DEBUG: ENABLE_HAIR_SEGMENTATION parsed = {ENABLE_HAIR_SEGMENTATION}")
+print(f"🔍 DEBUG: ENABLE_FACE_FILL parsed = {ENABLE_FACE_FILL}")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -583,6 +593,9 @@ def draw_facemesh(image_bytes):
 
 def detect_hair_segmentation(image_bytes):
     """Detect hair using MediaPipe Image Segmenter"""
+    if not ENABLE_HAIR_SEGMENTATION:
+        logger.info("Hair segmentation disabled by flag")
+        return None
     try:
         from mediapipe.tasks import python
         from mediapipe.tasks.python import vision
@@ -726,270 +739,195 @@ def draw_facial_regions(image_bytes):
             results = face_mesh.process(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
             if results.multi_face_landmarks:
                 for face_landmarks in results.multi_face_landmarks:
+                    # Face fill: draw subtle white fill under everything
+                    if ENABLE_FACE_FILL and "face_oval" in FACIAL_REGIONS["face_contour"]:
+                        try:
+                            face_fill_indices = FACIAL_REGIONS["face_contour"]["face_oval"]
+                            face_fill_points = []
+                            for idx2 in face_fill_indices:
+                                if idx2 < len(face_landmarks.landmark):
+                                    lm = face_landmarks.landmark[idx2]
+                                    fx = int(lm.x * img.shape[1])
+                                    fy = int(lm.y * img.shape[0])
+                                    face_fill_points.append([fx, fy])
+                            if len(face_fill_points) > 2:
+                                face_fill_points = np.array(face_fill_points, dtype=np.int32)
+                                # Draw transparentish cyan fill underlay and blend immediately
+                                overlay_fill = img.copy()
+                                cv2.fillPoly(overlay_fill, [face_fill_points], (255, 255, 0))
+                                img = cv2.addWeighted(overlay_fill, 0.18, img, 0.82, 0)
+                                # Recreate overlay for lines on top of the filled image
+                                overlay = img.copy()
+                        except Exception:
+                            pass
+
                     # FIRST: Draw all face mesh dots (like in draw_facemesh)
                     n_points = len(face_landmarks.landmark)
                     for idx, landmark in enumerate(face_landmarks.landmark):
                         x = int(landmark.x * img.shape[1])
                         y = int(landmark.y * img.shape[0])
-                        # Gradient from blue (#4f8cff) to green (#4fd1c5)
-                        t = idx / n_points
-                        r = int((0x4f * (1-t)) + (0x4f * t))
-                        g = int((0x8c * (1-t)) + (0xd1 * t))
-                        b = int((0xff * (1-t)) + (0xc5 * t))
-                        color = (b, g, r, 180)  # OpenCV uses BGR, alpha=180/255
-                        # Draw semi-transparent dot
-                        cv2.circle(overlay, (x, y), 2, (b, g, r), -1, lineType=cv2.LINE_AA)
+                        # Unified bright cyan dots
+                        cv2.circle(overlay, (x, y), 2, (255, 255, 0), -1, lineType=cv2.LINE_AA)
                     
+                    # If outlines and tessellation are disabled, blend and continue with next face
+                    if not ENABLE_TESSELLATION and not ENABLE_FEATURE_OUTLINES:
+                        img = cv2.addWeighted(overlay, 0.5, img, 0.5, 0)
+                        continue
+
                     # SECOND: Draw tessellation edges (subtle mesh lines)
-                    from mediapipe.python.solutions.face_mesh_connections import FACEMESH_TESSELATION
-                    h, w = img.shape[:2]
-                    
-                    # Draw tessellation lines (brighter and slightly thicker)
-                    for a, b in FACEMESH_TESSELATION:
-                        if a < len(face_landmarks.landmark) and b < len(face_landmarks.landmark):
-                            pt1 = (int(face_landmarks.landmark[a].x * w), int(face_landmarks.landmark[a].y * h))
-                            pt2 = (int(face_landmarks.landmark[b].x * w), int(face_landmarks.landmark[b].y * h))
-                            cv2.line(overlay, pt1, pt2, (220, 220, 220), 2, cv2.LINE_AA)
+                    if ENABLE_TESSELLATION:
+                        from mediapipe.python.solutions.face_mesh_connections import FACEMESH_TESSELATION
+                        h, w = img.shape[:2]
+                        for i, (a, b) in enumerate(FACEMESH_TESSELATION):
+                            if i % 3 != 0:
+                                continue
+                            if a < len(face_landmarks.landmark) and b < len(face_landmarks.landmark):
+                                pt1 = (int(face_landmarks.landmark[a].x * w), int(face_landmarks.landmark[a].y * h))
+                                pt2 = (int(face_landmarks.landmark[b].x * w), int(face_landmarks.landmark[b].y * h))
+                                cv2.line(overlay, pt1, pt2, (90, 90, 90), 2, cv2.LINE_AA)
                     
                     # THIRD: Draw facial region outlines on top of the dots and tessellation
-                    
-                    # Eyes: bright modern light blue outline
-                    eye_color = (255, 255, 0)  # Bright cyan in BGR
-                    for eye_region in ["left_eye", "right_eye"]:
-                        if eye_region in FACIAL_REGIONS["eyes"]:
-                            landmark_indices = FACIAL_REGIONS["eyes"][eye_region]
+                    if ENABLE_FEATURE_OUTLINES:
+                        # Eyes: bright modern light blue outline
+                        eye_color = (255, 255, 0)  # Unified bright cyan in BGR
+                        for eye_region in ["left_eye", "right_eye"]:
+                            if eye_region in FACIAL_REGIONS["eyes"]:
+                                landmark_indices = FACIAL_REGIONS["eyes"][eye_region]
+                                points = []
+                                for idx in landmark_indices:
+                                    if idx < len(face_landmarks.landmark):
+                                        landmark = face_landmarks.landmark[idx]
+                                        x = int(landmark.x * img.shape[1])
+                                        y = int(landmark.y * img.shape[0])
+                                        points.append([x, y])
+                                if len(points) > 2:
+                                    points = np.array(points, dtype=np.int32)
+                                    if len(points) > 4:
+                                        from scipy.interpolate import splprep, splev
+                                        try:
+                                            closed_points = np.vstack([points, points[0]])
+                                            tck, u = splprep([closed_points[:, 0], closed_points[:, 1]], s=100, per=True)
+                                            new_points = np.array(splev(np.linspace(0, 1, 200), tck)).T.astype(np.int32)
+                                            cv2.polylines(overlay, [new_points], True, eye_color, 2, cv2.LINE_AA)
+                                        except:
+                                            cv2.polylines(overlay, [points], True, eye_color, 2, cv2.LINE_AA)
+                                    else:
+                                        cv2.polylines(overlay, [points], True, eye_color, 2, cv2.LINE_AA)
+
+                        # Eyebrows
+                        eyebrow_color = (255, 255, 0)
+                        for eyebrow_region in ["left_eyebrow", "right_eyebrow"]:
+                            if eyebrow_region in FACIAL_REGIONS["eyes"]:
+                                landmark_indices = FACIAL_REGIONS["eyes"][eyebrow_region]
+                                points = []
+                                for idx in landmark_indices:
+                                    if idx < len(face_landmarks.landmark):
+                                        landmark = face_landmarks.landmark[idx]
+                                        x = int(landmark.x * img.shape[1])
+                                        y = int(landmark.y * img.shape[0])
+                                        points.append([x, y])
+                                if len(points) > 2:
+                                    points = np.array(points, dtype=np.int32)
+                                    min_x = np.min(points[:, 0])
+                                    max_x = np.max(points[:, 0])
+                                    x_range = np.linspace(min_x, max_x, 60)
+                                    logger.info(f"Eyebrow: processing {len(points)} points, X range: {min_x} to {max_x}")
+                                    eyebrow_bottom_points = find_lowest_y_for_each_x(points, x_range, tolerance=2, smoothing_level="ultra")
+                                    logger.info(f"Eyebrow: function returned {len(eyebrow_bottom_points)} points")
+                                    if len(eyebrow_bottom_points) > 3:
+                                        try:
+                                            from scipy.interpolate import splprep, splev
+                                            tck, u = splprep([eyebrow_bottom_points[:, 0], eyebrow_bottom_points[:, 1]], s=150)
+                                            new_points = np.array(splev(np.linspace(0, 1, 300), tck)).T.astype(np.int32)
+                                            cv2.polylines(overlay, [new_points], False, eyebrow_color, 2, cv2.LINE_AA)
+                                            logger.info(f"Eyebrow bottom edge drawn with {len(eyebrow_bottom_points)} points, smoothed to 300 points")
+                                        except:
+                                            cv2.polylines(overlay, [eyebrow_bottom_points], False, eyebrow_color, 2, cv2.LINE_AA)
+                                            logger.info(f"Eyebrow bottom edge drawn with {len(eyebrow_bottom_points)} points (no smoothing)")
+
+                        # Nose
+                        if "nose" in FACIAL_REGIONS["nose"]:
+                            nose_color = (255, 255, 0)
+                            landmark_indices = FACIAL_REGIONS["nose"]["nose"]
                             points = []
-                            
                             for idx in landmark_indices:
                                 if idx < len(face_landmarks.landmark):
                                     landmark = face_landmarks.landmark[idx]
                                     x = int(landmark.x * img.shape[1])
                                     y = int(landmark.y * img.shape[0])
                                     points.append([x, y])
-                            
                             if len(points) > 2:
                                 points = np.array(points, dtype=np.int32)
-                                # Draw smooth outline with proper curve smoothing
-                                if len(points) > 4:
-                                    # Use spline interpolation for smooth curves
-                                    from scipy.interpolate import splprep, splev
-                                    try:
-                                        # Close the curve by adding first point at end
-                                        closed_points = np.vstack([points, points[0]])
-                                        # Fit spline with more smoothing (higher s value)
-                                        tck, u = splprep([closed_points[:, 0], closed_points[:, 1]], s=100, per=True)
-                                        # Generate smooth curve points with more interpolation
-                                        new_points = np.array(splev(np.linspace(0, 1, 200), tck)).T.astype(np.int32)
-                                        cv2.polylines(overlay, [new_points], True, eye_color, 3, cv2.LINE_AA)
-                                    except:
-                                        # Fallback to simple polyline if spline fails
-                                        cv2.polylines(overlay, [points], True, eye_color, 3, cv2.LINE_AA)
-                                else:
-                                    cv2.polylines(overlay, [points], True, eye_color, 3, cv2.LINE_AA)
-                    
-                    # Eyebrows: use lowest point logic for clean bottom edge
-                    eyebrow_color = (255, 255, 0)  # Bright cyan in BGR
-                    for eyebrow_region in ["left_eyebrow", "right_eyebrow"]:
-                        if eyebrow_region in FACIAL_REGIONS["eyes"]:
-                            landmark_indices = FACIAL_REGIONS["eyes"][eyebrow_region]
-                            points = []
-                            
-                            for idx in landmark_indices:
-                                if idx < len(face_landmarks.landmark):
-                                    landmark = face_landmarks.landmark[idx]
-                                    x = int(landmark.x * img.shape[1])
-                                    y = int(landmark.y * img.shape[0])
-                                    points.append([x, y])
-                            
-                            if len(points) > 2:
-                                points = np.array(points, dtype=np.int32)
-                                
-                                # Use the simple function to find lowest Y for each X with high smoothing for eyebrows
                                 min_x = np.min(points[:, 0])
                                 max_x = np.max(points[:, 0])
-                                x_range = np.linspace(min_x, max_x, 60)
-                                logger.info(f"Eyebrow: processing {len(points)} points, X range: {min_x} to {max_x}")
-                                eyebrow_bottom_points = find_lowest_y_for_each_x(points, x_range, tolerance=2, smoothing_level="ultra")
-                                logger.info(f"Eyebrow: function returned {len(eyebrow_bottom_points)} points")
-                                
-                                # Draw the clean eyebrow bottom edge
-                                if len(eyebrow_bottom_points) > 3:
-                                    # Apply spline smoothing for ultra-smooth curves
+                                x_range = np.linspace(min_x, max_x, 40)
+                                logger.info(f"Nose: processing {len(points)} points, X range: {min_x} to {max_x}")
+                                nose_base_points = find_lowest_y_for_each_x(points, x_range, tolerance=2, smoothing_level="high")
+                                logger.info(f"Nose base: found {len(nose_base_points)} points")
+                                if len(nose_base_points) > 3:
+                                    nose_base_points = nose_base_points[nose_base_points[:, 0].argsort()]
                                     try:
                                         from scipy.interpolate import splprep, splev
-                                        # Fit spline with high smoothing parameter
-                                        tck, u = splprep([eyebrow_bottom_points[:, 0], eyebrow_bottom_points[:, 1]], s=150)
-                                        # Generate very smooth curve with more interpolation points
-                                        new_points = np.array(splev(np.linspace(0, 1, 300), tck)).T.astype(np.int32)
-                                        cv2.polylines(overlay, [new_points], False, eyebrow_color, 3, cv2.LINE_AA)
-                                        logger.info(f"Eyebrow bottom edge drawn with {len(eyebrow_bottom_points)} points, smoothed to 300 points")
+                                        tck, u = splprep([nose_base_points[:, 0], nose_base_points[:, 1]], s=50)
+                                        new_points = np.array(splev(np.linspace(0, 1, 200), tck)).T.astype(np.int32)
+                                        cv2.polylines(overlay, [new_points], False, nose_color, 2, cv2.LINE_AA)
+                                        logger.info(f"Nose base drawn with {len(nose_base_points)} points, smoothed to 200 points")
                                     except:
-                                        # Fallback to simple polyline if spline fails
-                                        cv2.polylines(overlay, [eyebrow_bottom_points], False, eyebrow_color, 3, cv2.LINE_AA)
-                                        logger.info(f"Eyebrow bottom edge drawn with {len(eyebrow_bottom_points)} points (no smoothing)")
-                                else:
-                                    logger.warning(f"Not enough eyebrow bottom points: {len(eyebrow_bottom_points)}")
-                    
-                    # Nose: base and bridge using lowest point logic
-                    if "nose" in FACIAL_REGIONS["nose"]:
-                        nose_color = (255, 255, 0)  # Bright cyan in BGR
-                        landmark_indices = FACIAL_REGIONS["nose"]["nose"]
-                        points = []
-                        
-                        for idx in landmark_indices:
-                            if idx < len(face_landmarks.landmark):
-                                landmark = face_landmarks.landmark[idx]
-                                x = int(landmark.x * img.shape[1])
-                                y = int(landmark.y * img.shape[0])
-                                points.append([x, y])
-                        
-                        if len(points) > 2:
-                            points = np.array(points, dtype=np.int32)
-                            
-                            # Draw nose base (bottom edge)
-                            min_x = np.min(points[:, 0])
-                            max_x = np.max(points[:, 0])
-                            x_range = np.linspace(min_x, max_x, 40)
-                            logger.info(f"Nose: processing {len(points)} points, X range: {min_x} to {max_x}")
-                            nose_base_points = find_lowest_y_for_each_x(points, x_range, tolerance=2, smoothing_level="high")
-                            logger.info(f"Nose base: found {len(nose_base_points)} points")
-                            
-                            if len(nose_base_points) > 3:
-                                # Draw the nose base as a single continuous line
-                                # Sort points by X coordinate to ensure proper ordering
-                                nose_base_points = nose_base_points[nose_base_points[:, 0].argsort()]
-                                
-                                # Apply spline smoothing for the nose base
-                                try:
+                                        cv2.polylines(overlay, [nose_base_points], False, nose_color, 2, cv2.LINE_AA)
+                                        logger.info(f"Nose base drawn with {len(nose_base_points)} points (no smoothing)")
+
+                        # Lips
+                        if "lips" in FACIAL_REGIONS["mouth"]:
+                            lip_color = (255, 255, 0)
+                            landmark_indices = FACIAL_REGIONS["mouth"]["lips"]
+                            points = []
+                            for idx in landmark_indices:
+                                if idx < len(face_landmarks.landmark):
+                                    landmark = face_landmarks.landmark[idx]
+                                    x = int(landmark.x * img.shape[1])
+                                    y = int(landmark.y * img.shape[0])
+                                    points.append([x, y])
+                            if len(points) > 2:
+                                points = np.array(points, dtype=np.int32)
+                                if len(points) > 4:
                                     from scipy.interpolate import splprep, splev
-                                    tck, u = splprep([nose_base_points[:, 0], nose_base_points[:, 1]], s=50)
-                                    new_points = np.array(splev(np.linspace(0, 1, 200), tck)).T.astype(np.int32)
-                                    cv2.polylines(overlay, [new_points], False, nose_color, 3, cv2.LINE_AA)
-                                    logger.info(f"Nose base drawn with {len(nose_base_points)} points, smoothed to 200 points")
-                                except:
-                                    cv2.polylines(overlay, [nose_base_points], False, nose_color, 3, cv2.LINE_AA)
-                                    logger.info(f"Nose base drawn with {len(nose_base_points)} points (no smoothing)")
-                    
-                    # Lips: magenta outline with slight interior shading
-                    if "lips" in FACIAL_REGIONS["mouth"]:
-                        lip_color = (255, 255, 0)  # Bright cyan in BGR
-                        landmark_indices = FACIAL_REGIONS["mouth"]["lips"]
-                        points = []
-                        
-                        for idx in landmark_indices:
-                            if idx < len(face_landmarks.landmark):
-                                landmark = face_landmarks.landmark[idx]
-                                x = int(landmark.x * img.shape[1])
-                                y = int(landmark.y * img.shape[0])
-                                points.append([x, y])
-                        
-                        if len(points) > 2:
-                            points = np.array(points, dtype=np.int32)
-                            # Draw smooth lip outline with proper curve smoothing
-                            if len(points) > 4:
-                                # Use spline interpolation for smooth curves
-                                from scipy.interpolate import splprep, splev
-                                try:
-                                    # Close the curve by adding first point at end
-                                    closed_points = np.vstack([points, points[0]])
-                                    # Fit spline with more smoothing (higher s value)
-                                    tck, u = splprep([closed_points[:, 0], closed_points[:, 1]], s=100, per=True)
-                                    # Generate smooth curve points with more interpolation
-                                    new_points = np.array(splev(np.linspace(0, 1, 200), tck)).T.astype(np.int32)
-                                    cv2.polylines(overlay, [new_points], True, lip_color, 3, cv2.LINE_AA)
-                                except:
-                                    # Fallback to simple polyline if spline fails
-                                    cv2.polylines(overlay, [points], True, lip_color, 3, cv2.LINE_AA)
-                            else:
-                                cv2.polylines(overlay, [points], True, lip_color, 3, cv2.LINE_AA)
-                    
-                    # Face contour: light blue outline
-                    if "face_oval" in FACIAL_REGIONS["face_contour"]:
-                        contour_color = (255, 255, 0)  # Bright cyan in BGR
-                        landmark_indices = FACIAL_REGIONS["face_contour"]["face_oval"]
-                        points = []
-                        
-                        for idx in landmark_indices:
-                            if idx < len(face_landmarks.landmark):
-                                landmark = face_landmarks.landmark[idx]
-                                x = int(landmark.x * img.shape[1])
-                                y = int(landmark.y * img.shape[0])
-                                points.append([x, y])
-                        
-                        if len(points) > 2:
-                            points = np.array(points, dtype=np.int32)
-                            # Draw smooth face contour with proper curve smoothing
-                            if len(points) > 4:
-                                # Use spline interpolation for smooth curves
-                                from scipy.interpolate import splprep, splev
-                                try:
-                                    # Close the curve by adding first point at end
-                                    closed_points = np.vstack([points, points[0]])
-                                    # Fit spline with more smoothing (higher s value)
-                                    tck, u = splprep([closed_points[:, 0], closed_points[:, 1]], s=100, per=True)
-                                    # Generate smooth curve points with more interpolation
-                                    new_points = np.array(splev(np.linspace(0, 1, 200), tck)).T.astype(np.int32)
-                                    cv2.polylines(overlay, [new_points], True, contour_color, 3, cv2.LINE_AA)
-                                except:
-                                    # Fallback to simple polyline if spline fails
-                                    cv2.polylines(overlay, [points], True, contour_color, 3, cv2.LINE_AA)
-                            else:
-                                cv2.polylines(overlay, [points], True, contour_color, 3, cv2.LINE_AA)
-                    
-                    # Hairline: from hair segmentation mask, trace the actual hairline boundary
-                    hair_mask = detect_hair_segmentation(image_bytes)
-                    if hair_mask is not None:
-                        logger.info(f"Drawing hairline: mask shape={hair_mask.shape}")
-                        hair_mask_resized = cv2.resize(hair_mask, (img.shape[1], img.shape[0]))
-                        
-                        # Find the hairline by taking the lowest Y coordinate for each X
-                        hairline_points = []
-                        img_height, img_width = hair_mask_resized.shape
-                        
-                        # Only process the upper portion of the image (forehead area)
-                        max_y = int(img_height * 0.4)  # Upper 40% of image
-                        
-                        for x in range(img_width):
-                            # Find the highest Y coordinate (lowest pixel value) for this X - this is the hairline
-                            highest_y = None
-                            for y in range(max_y):
-                                if hair_mask_resized[y, x] > 0:  # If hair pixel found
-                                    highest_y = y  # Keep updating to find the lowest hair pixel (highest Y)
-                            
-                            if highest_y is not None:
-                                hairline_points.append([x, highest_y])
-                        
-                        # Use the simple function to find lowest Y for each X (for hairline, we want the highest Y)
-                        if len(hairline_points) > 15:
-                            hairline_points = np.array(hairline_points, dtype=np.int32)
-                            # For hairline, we want the highest Y (lowest on screen), so we invert the logic
-                            # The hairline points are already the "lowest" hair pixels, so we use them directly
-                            x_range = np.linspace(0, img_width-1, 100)  # Sample across full width
-                            smoothed_hairline = find_lowest_y_for_each_x(hairline_points, x_range, tolerance=3, smoothing_level="medium")
-                        
-                        # Use the smoothed hairline from our function
-                        if len(smoothed_hairline) > 5:
-                            # Apply final spline smoothing for ultra-smooth curves
-                            hairline_color = (255, 255, 0)  # Bright cyan in BGR
-                            try:
-                                from scipy.interpolate import splprep, splev
-                                # Fit spline with high smoothing parameter
-                                tck, u = splprep([smoothed_hairline[:, 0], smoothed_hairline[:, 1]], s=200)
-                                # Generate very smooth curve with more interpolation points
-                                new_points = np.array(splev(np.linspace(0, 1, 400), tck)).T.astype(np.int32)
-                                cv2.polylines(overlay, [new_points], False, hairline_color, 3, cv2.LINE_AA)
-                                logger.info(f"Ultra-smooth hairline drawn with {len(smoothed_hairline)} points, smoothed to 400 points")
-                            except:
-                                # Fallback to simple polyline if spline fails
-                                cv2.polylines(overlay, [smoothed_hairline], False, hairline_color, 3, cv2.LINE_AA)
-                                logger.info(f"Hairline drawn with {len(smoothed_hairline)} points (no spline smoothing)")
-                        else:
-                            logger.warning(f"Not enough smoothed hairline points: {len(smoothed_hairline)}")
-                    else:
-                        logger.warning("Hair mask is None - hair segmentation failed")
+                                    try:
+                                        closed_points = np.vstack([points, points[0]])
+                                        tck, u = splprep([closed_points[:, 0], closed_points[:, 1]], s=100, per=True)
+                                        new_points = np.array(splev(np.linspace(0, 1, 200), tck)).T.astype(np.int32)
+                                        cv2.polylines(overlay, [new_points], True, lip_color, 2, cv2.LINE_AA)
+                                    except:
+                                        cv2.polylines(overlay, [points], True, lip_color, 2, cv2.LINE_AA)
+                                else:
+                                    cv2.polylines(overlay, [points], True, lip_color, 2, cv2.LINE_AA)
+
+                        # Face contour
+                        if "face_oval" in FACIAL_REGIONS["face_contour"]:
+                            contour_color = (255, 255, 0)
+                            landmark_indices = FACIAL_REGIONS["face_contour"]["face_oval"]
+                            points = []
+                            for idx in landmark_indices:
+                                if idx < len(face_landmarks.landmark):
+                                    landmark = face_landmarks.landmark[idx]
+                                    x = int(landmark.x * img.shape[1])
+                                    y = int(landmark.y * img.shape[0])
+                                    points.append([x, y])
+                            if len(points) > 2:
+                                points = np.array(points, dtype=np.int32)
+                                if len(points) > 4:
+                                    from scipy.interpolate import splprep, splev
+                                    try:
+                                        closed_points = np.vstack([points, points[0]])
+                                        tck, u = splprep([closed_points[:, 0], closed_points[:, 1]], s=100, per=True)
+                                        new_points = np.array(splev(np.linspace(0, 1, 200), tck)).T.astype(np.int32)
+                                        cv2.polylines(overlay, [new_points], True, contour_color, 2, cv2.LINE_AA)
+                                    except:
+                                        cv2.polylines(overlay, [points], True, contour_color, 2, cv2.LINE_AA)
+                                else:
+                                    cv2.polylines(overlay, [points], True, contour_color, 2, cv2.LINE_AA)
                 
                 # Blend overlay with original for more visible tessellation effect
-                img = cv2.addWeighted(overlay, 0.25, img, 0.75, 0)
+                img = cv2.addWeighted(overlay, 0.5, img, 0.5, 0)
         
         _, buffer = cv2.imencode('.jpg', img)
         encoded = base64.b64encode(buffer).decode('utf-8')
@@ -1059,7 +997,11 @@ async def api_health_check():
         "settings": {
             "enable_deepface": ENABLE_DEEPFACE,
             "enable_chatgpt": ENABLE_CHATGPT,
-            "load_harvard": LOAD_HARVARD
+            "load_harvard": LOAD_HARVARD,
+            "enable_feature_outlines": ENABLE_FEATURE_OUTLINES,
+            "enable_tessellation": ENABLE_TESSELLATION,
+            "enable_hair_segmentation": ENABLE_HAIR_SEGMENTATION,
+            "enable_face_fill": ENABLE_FACE_FILL
         }
     }
 
