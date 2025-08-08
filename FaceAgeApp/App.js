@@ -556,6 +556,25 @@ function AppContent() {
       return lower.concat(upper);
     };
 
+    // Chaikin corner-cutting to smoothly refine a closed polyline
+    const smoothClosedPolyline = (pts, iterations = 3) => {
+      if (!pts || pts.length < 3) return pts || [];
+      let poly = pts.slice();
+      for (let it = 0; it < iterations; it++) {
+        const next = [];
+        const n = poly.length;
+        for (let i = 0; i < n; i++) {
+          const a = poly[i];
+          const b = poly[(i + 1) % n];
+          // Q and R points
+          next.push({ x: 0.75 * a.x + 0.25 * b.x, y: 0.75 * a.y + 0.25 * b.y });
+          next.push({ x: 0.25 * a.x + 0.75 * b.x, y: 0.25 * a.y + 0.75 * b.y });
+        }
+        poly = next;
+      }
+      return poly;
+    };
+
     const init = async () => {
       try {
         const video = videoRef.current;
@@ -627,62 +646,37 @@ function AppContent() {
           // Update UI message (rendered in the top overlay, not on canvas)
           setGuidanceMessage(message);
 
-          // Subtle face outline (convex hull), no dots
+          // VERY subtle dots only along the smoothed face boundary (no interior, no outline)
           try {
             const landmarks = faces[0];
             if (landmarks && landmarks.length) {
               const ptsPx = landmarks.map(({ x, y }) => ({ x: x * w, y: y * h }));
               const hullPts = hull(ptsPx);
               if (hullPts.length >= 3) {
+                const outlinePts = smoothClosedPolyline(hullPts, 3);
                 ctx.save();
-                // Smooth fade towards target alpha based on alignment
                 const alignedNow = (message === 'Hold steady');
-                const targetAlpha = alignedNow ? 0.5 : 0.34;
+                const targetAlpha = alignedNow ? 0.28 : 0.18; // subtle fade
                 dotAlphaRef.current += (targetAlpha - dotAlphaRef.current) * 0.18;
                 ctx.globalAlpha = Math.max(0, Math.min(1, dotAlphaRef.current));
-                // Subtle, crisp stroke in brand cyan
-                ctx.lineWidth = Math.max(1, Math.min(2, Math.min(w, h) * 0.002));
-                ctx.strokeStyle = 'rgba(79,209,197,1)';
-                ctx.lineJoin = 'round';
-                ctx.lineCap = 'round';
-                ctx.beginPath();
-                ctx.moveTo(hullPts[0].x, hullPts[0].y);
-                for (let i = 1; i < hullPts.length; i++) {
-                  ctx.lineTo(hullPts[i].x, hullPts[i].y);
+                const r = Math.max(1.2, Math.min(2.2, Math.min(w, h) * 0.0026));
+                ctx.fillStyle = 'rgba(79,209,197,1)'; // brand cyan
+                // Aim for fewer, slightly larger dots (~36) evenly along the boundary
+                const desired = 36;
+                const step = Math.max(1, Math.floor(outlinePts.length / desired));
+                for (let i = 0; i < outlinePts.length; i += step) {
+                  const p = outlinePts[i];
+                  ctx.beginPath();
+                  ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+                  ctx.fill();
                 }
-                ctx.closePath();
-                ctx.stroke();
                 ctx.restore();
               }
             }
           } catch (_) {}
 
-          // Subtle dark layer outside the face oval (keeps inside clear)
-          try {
-            const padX = 30; // fixed padding in pixels (left & right)
-            const padY = 30; // fixed padding in pixels (top & bottom)
-            const maxOvalW = Math.max(0, w - 2 * padX);
-            const maxOvalH = Math.max(0, h - 2 * padY);
-            const aspect = FACE_HEIGHT / FACE_WIDTH; // keep face oval proportions (~1.35)
-            let ovalW = maxOvalW;
-            let ovalH = ovalW * aspect;
-            if (ovalH > maxOvalH) {
-              ovalH = maxOvalH;
-              ovalW = ovalH / aspect;
-            }
-            const cx = w / 2;
-            const cy = h / 2;
-            const rx = ovalW / 2;
-            const ry = ovalH / 2;
-            ctx.save();
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
-            ctx.beginPath();
-            // Full-rect + ellipse with even-odd rule to fill outside oval only
-            ctx.rect(0, 0, w, h);
-            ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-            ctx.fill('evenodd');
-            ctx.restore();
-          } catch (_) {}
+          // No dark outside mask
+          try { /* intentionally empty to keep canvas clear */ } catch (_) {}
         });
 
         const loop = async () => {
