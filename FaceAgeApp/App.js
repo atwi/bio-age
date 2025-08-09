@@ -267,6 +267,7 @@ const AppFooter = ({ onShowModal, onShowInfo }) => {
 function AppContent() {
   const [currentStep, setCurrentStep] = useState(1); // 1: Upload, 2: Analyzing, 3: Results
   const [selectedImage, setSelectedImage] = useState(null);
+  const [sourceIsSelfie, setSourceIsSelfie] = useState(false); // true if captured in-app (selfie), false if uploaded
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState(null);
   const [apiHealth, setApiHealth] = useState(null);
@@ -436,6 +437,7 @@ function AppContent() {
       if (!result.canceled) {
         const compressedImage = await resizeImage(result.assets[0].uri);
         setSelectedImage(compressedImage);
+        setSourceIsSelfie(false);
         setCurrentStep(2); // Move to analyzing step
         analyzeFace(compressedImage);
       }
@@ -460,6 +462,7 @@ function AppContent() {
         if (!result.canceled) {
           const compressedImage = await resizeImage(result.assets[0].uri);
           setSelectedImage(compressedImage);
+          setSourceIsSelfie(true);
           setCurrentStep(2); // Move to analyzing step
           analyzeFace(compressedImage);
         }
@@ -504,6 +507,7 @@ function AppContent() {
           const compressedImage = await resizeImage(imageUri);
           setSelectedImage(compressedImage);
           closeWebCamera();
+          setSourceIsSelfie(true);
           setCurrentStep(2); // Move to analyzing step
           analyzeFace(compressedImage);
         }, 'image/jpeg', 0.8);
@@ -1272,6 +1276,7 @@ function AppContent() {
                 width: ANALYZE_IMAGE_SIZE,
                 height: ANALYZE_IMAGE_SIZE,
                 borderRadius: 20,
+                transform: [{ scaleX: sourceIsSelfie ? -1 : 1 }],
               }}
               resizeMode="cover"
             />
@@ -1391,7 +1396,7 @@ function AppContent() {
                         }}>
                           <Image
                             source={{ uri: faceMeshOverlays[index] ? `data:image/jpeg;base64,${faceMeshOverlays[index]}` : `data:image/jpeg;base64,${face.face_crop_base64}` }}
-                            style={{ width: '100%', height: '100%', borderRadius: 20 }}
+                            style={{ width: '100%', height: '100%', borderRadius: 20, transform: [{ scaleX: sourceIsSelfie ? -1 : 1 }] }}
                             resizeMode="cover"
                           />
                         </View>
