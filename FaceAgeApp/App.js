@@ -276,6 +276,9 @@ function AppContent() {
   const canvasRef = useRef(null);
   const liveOverlayRef = useRef(null);
   const dotAlphaRef = useRef(0); // for smooth fade-in/out of landmark dots
+  const lastAlignedRef = useRef(false); // track alignment lock transitions
+  const pulseUntilRef = useRef(0); // time until which to show the brief glow pulse
+  const colorMixRef = useRef(0); // 0 = brand gradient, 1 = green; eased per frame for smooth color fade
   const [guidanceMessage, setGuidanceMessage] = useState('Align your face in the frame');
   const [isAligned, setIsAligned] = useState(false);
   
@@ -646,7 +649,7 @@ function AppContent() {
           // Update UI message (rendered in the top overlay, not on canvas)
           setGuidanceMessage(message);
 
-          // VERY subtle dots only along the smoothed face boundary (no interior, no outline)
+          // Single-stroke face outline (smoothed convex hull), gradient cyan→teal; turns green when aligned
           try {
             const landmarks = faces[0];
             if (landmarks && landmarks.length) {
@@ -654,22 +657,75 @@ function AppContent() {
               const hullPts = hull(ptsPx);
               if (hullPts.length >= 3) {
                 const outlinePts = smoothClosedPolyline(hullPts, 3);
-                ctx.save();
-                const alignedNow = (message === 'Hold steady');
-                const targetAlpha = alignedNow ? 0.28 : 0.18; // subtle fade
-                dotAlphaRef.current += (targetAlpha - dotAlphaRef.current) * 0.18;
-                ctx.globalAlpha = Math.max(0, Math.min(1, dotAlphaRef.current));
-                const r = Math.max(1.2, Math.min(2.2, Math.min(w, h) * 0.0026));
-                ctx.fillStyle = 'rgba(79,209,197,1)'; // brand cyan
-                // Aim for fewer, slightly larger dots (~36) evenly along the boundary
-                const desired = 36;
-                const step = Math.max(1, Math.floor(outlinePts.length / desired));
-                for (let i = 0; i < outlinePts.length; i += step) {
-                  const p = outlinePts[i];
-                  ctx.beginPath();
-                  ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-                  ctx.fill();
+                // Compute bounds for gradient direction
+                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                for (const p of outlinePts) {
+                  if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+                  if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
                 }
+                const alignedNow = (message === 'Hold steady');
+                // Detect alignment lock transition → brief pulse
+                if (!lastAlignedRef.current && alignedNow) {
+                  pulseUntilRef.current = Date.now() + 150; // 150ms pulse
+                }
+                lastAlignedRef.current = alignedNow;
+
+                // Smooth fade of outline
+                const targetAlpha = alignedNow ? 0.55 : 0.35;
+                dotAlphaRef.current += (targetAlpha - dotAlphaRef.current) * 0.18;
+                const alphaNow = Math.max(0, Math.min(1, dotAlphaRef.current));
+
+                // Smooth color mix between brand gradient (0) and green (1)
+                const targetMix = alignedNow ? 1 : 0;
+                colorMixRef.current += (targetMix - colorMixRef.current) * 0.15;
+                const mix = Math.max(0, Math.min(1, colorMixRef.current));
+
+                ctx.save();
+                ctx.lineWidth = 1.2; // thin stroke (CSS px)
+                ctx.lineJoin = 'round';
+                ctx.lineCap = 'round';
+
+                // Prepare brand gradient
+                const grad = ctx.createLinearGradient(minX, minY, maxX, minY);
+                grad.addColorStop(0, '#4f8cff');
+                grad.addColorStop(1, '#4fd1c5');
+
+                // Draw closed outline twice to blend colors: gradient (1-mix) + green (mix)
+                // 1) Brand gradient
+                if (1 - mix > 0.001) {
+                  ctx.globalAlpha = alphaNow * (1 - mix);
+                  ctx.strokeStyle = grad;
+                  ctx.beginPath();
+                  ctx.moveTo(outlinePts[0].x, outlinePts[0].y);
+                  for (let i = 1; i < outlinePts.length; i++) {
+                    ctx.lineTo(outlinePts[i].x, outlinePts[i].y);
+                  }
+                  ctx.closePath();
+                  ctx.stroke();
+                }
+
+                // 2) Aligned green
+                if (mix > 0.001) {
+                  ctx.globalAlpha = alphaNow * mix;
+                  ctx.strokeStyle = 'rgba(0,220,140,1)';
+                  ctx.beginPath();
+                  ctx.moveTo(outlinePts[0].x, outlinePts[0].y);
+                  for (let i = 1; i < outlinePts.length; i++) {
+                    ctx.lineTo(outlinePts[i].x, outlinePts[i].y);
+                  }
+                  ctx.closePath();
+                  ctx.stroke();
+                }
+
+                // Optional glow pulse when alignment locks
+                if (Date.now() < pulseUntilRef.current) {
+                  ctx.shadowColor = alignedNow ? 'rgba(0,220,140,0.9)' : 'rgba(79,209,197,0.8)';
+                  ctx.shadowBlur = 6;
+                } else {
+                  ctx.shadowColor = 'transparent';
+                  ctx.shadowBlur = 0;
+                }
+
                 ctx.restore();
               }
             }
