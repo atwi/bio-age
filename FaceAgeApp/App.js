@@ -279,6 +279,8 @@ function AppContent() {
   const lastAlignedRef = useRef(false); // track alignment lock transitions
   const pulseUntilRef = useRef(0); // time until which to show the brief glow pulse
   const colorMixRef = useRef(0); // 0 = brand gradient, 1 = green; eased per frame for smooth color fade
+  const badgeScale = useRef(new Animated.Value(0.96)).current; // instruction badge scale
+  const badgeOpacity = useRef(new Animated.Value(0.9)).current; // instruction badge opacity
   const [guidanceMessage, setGuidanceMessage] = useState('Align your face in the frame');
   const [isAligned, setIsAligned] = useState(false);
   
@@ -640,99 +642,17 @@ function AppContent() {
               } else if (cxFrac > 0.20 || cyFrac > 0.20) {
                 message = 'Center your face';
               } else {
-                message = 'Hold steady';
+                message = 'Ready to capture';
               }
-              setIsAligned(message === 'Hold steady');
+              setIsAligned(message === 'Ready to capture');
             }
           } catch (_) {}
 
           // Update UI message (rendered in the top overlay, not on canvas)
           setGuidanceMessage(message);
 
-          // Single-stroke face outline (smoothed convex hull), gradient cyan→teal; turns green when aligned
-          try {
-            const landmarks = faces[0];
-            if (landmarks && landmarks.length) {
-              const ptsPx = landmarks.map(({ x, y }) => ({ x: x * w, y: y * h }));
-              const hullPts = hull(ptsPx);
-              if (hullPts.length >= 3) {
-                const outlinePts = smoothClosedPolyline(hullPts, 3);
-                // Compute bounds for gradient direction
-                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-                for (const p of outlinePts) {
-                  if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
-                  if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
-                }
-                const alignedNow = (message === 'Hold steady');
-                // Detect alignment lock transition → brief pulse
-                if (!lastAlignedRef.current && alignedNow) {
-                  pulseUntilRef.current = Date.now() + 150; // 150ms pulse
-                }
-                lastAlignedRef.current = alignedNow;
-
-                // Smooth fade of outline
-                const targetAlpha = alignedNow ? 0.55 : 0.35;
-                dotAlphaRef.current += (targetAlpha - dotAlphaRef.current) * 0.18;
-                const alphaNow = Math.max(0, Math.min(1, dotAlphaRef.current));
-
-                // Smooth color mix between brand gradient (0) and green (1)
-                const targetMix = alignedNow ? 1 : 0;
-                colorMixRef.current += (targetMix - colorMixRef.current) * 0.15;
-                const mix = Math.max(0, Math.min(1, colorMixRef.current));
-
-                ctx.save();
-                ctx.lineWidth = 1.2; // thin stroke (CSS px)
-                ctx.lineJoin = 'round';
-                ctx.lineCap = 'round';
-
-                // Prepare brand gradient
-                const grad = ctx.createLinearGradient(minX, minY, maxX, minY);
-                grad.addColorStop(0, '#4f8cff');
-                grad.addColorStop(1, '#4fd1c5');
-
-                // Draw closed outline twice to blend colors: gradient (1-mix) + green (mix)
-                // 1) Brand gradient
-                if (1 - mix > 0.001) {
-                  ctx.globalAlpha = alphaNow * (1 - mix);
-                  ctx.strokeStyle = grad;
-                  ctx.beginPath();
-                  ctx.moveTo(outlinePts[0].x, outlinePts[0].y);
-                  for (let i = 1; i < outlinePts.length; i++) {
-                    ctx.lineTo(outlinePts[i].x, outlinePts[i].y);
-                  }
-                  ctx.closePath();
-                  ctx.stroke();
-                }
-
-                // 2) Aligned green
-                if (mix > 0.001) {
-                  ctx.globalAlpha = alphaNow * mix;
-                  ctx.strokeStyle = 'rgba(0,220,140,1)';
-                  ctx.beginPath();
-                  ctx.moveTo(outlinePts[0].x, outlinePts[0].y);
-                  for (let i = 1; i < outlinePts.length; i++) {
-                    ctx.lineTo(outlinePts[i].x, outlinePts[i].y);
-                  }
-                  ctx.closePath();
-                  ctx.stroke();
-                }
-
-                // Optional glow pulse when alignment locks
-                if (Date.now() < pulseUntilRef.current) {
-                  ctx.shadowColor = alignedNow ? 'rgba(0,220,140,0.9)' : 'rgba(79,209,197,0.8)';
-                  ctx.shadowBlur = 6;
-                } else {
-                  ctx.shadowColor = 'transparent';
-                  ctx.shadowBlur = 0;
-                }
-
-                ctx.restore();
-              }
-            }
-          } catch (_) {}
-
-          // No dark outside mask
-          try { /* intentionally empty to keep canvas clear */ } catch (_) {}
+          // No face outline drawing (badge provides alignment feedback)
+          try { /* intentionally empty */ } catch (_) {}
         });
 
         const loop = async () => {
@@ -1021,6 +941,24 @@ function AppContent() {
     }
   }, [results]);
 
+  // Animate the glassy instruction badge for clearer alignment feedback
+  useEffect(() => {
+    if (isAligned) {
+      Animated.parallel([
+        Animated.timing(badgeOpacity, { toValue: 1, duration: 180, useNativeDriver: false }),
+        Animated.sequence([
+          Animated.timing(badgeScale, { toValue: 1.06, duration: 120, useNativeDriver: false }),
+          Animated.timing(badgeScale, { toValue: 1.0, duration: 120, useNativeDriver: false }),
+        ]),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(badgeOpacity, { toValue: 0.9, duration: 150, useNativeDriver: false }),
+        Animated.timing(badgeScale, { toValue: 0.96, duration: 150, useNativeDriver: false }),
+      ]).start();
+    }
+  }, [isAligned]);
+
   // Web camera view for browsers
   if (showWebCamera && Platform.OS === 'web') {
     return (
@@ -1043,9 +981,29 @@ function AppContent() {
         
         {/* Top overlay with title */}
         <View style={styles.cameraTopOverlay}>
-          <View style={styles.instructionContainer}>
-            <Text style={styles.instructionText}>{guidanceMessage}</Text>
-          </View>
+          <Animated.View
+            style={[
+              styles.instructionContainer,
+              {
+                opacity: badgeOpacity,
+                transform: [{ scale: badgeScale }],
+                backdropFilter: 'blur(10px)',
+                backgroundColor: isAligned ? 'rgba(0, 220, 140, 0.18)' : 'rgba(0, 0, 0, 0.28)',
+                borderWidth: 1,
+                borderColor: isAligned ? 'rgba(0, 220, 140, 0.45)' : 'rgba(255, 255, 255, 0.28)',
+                filter: isAligned ? 'drop-shadow(0 0 10px rgba(0,220,140,0.35))' : 'none',
+              },
+            ]}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              {isAligned ? (
+                <Ionicons name="checkmark-circle" size={16} color="rgba(0,220,140,0.95)" />
+              ) : (
+                <Ionicons name="scan-outline" size={16} color="rgba(255,255,255,0.9)" />
+              )}
+              <Text style={styles.instructionText}>{guidanceMessage}</Text>
+            </View>
+          </Animated.View>
         </View>
         
         {/* Face Outline Overlay */}
