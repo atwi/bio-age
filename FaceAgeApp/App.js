@@ -49,6 +49,8 @@ import {
 } from '@ui-kitten/components';
 import logo from './assets/logo.png';
 import LoadingSpinner from './components/LoadingSpinner';
+import GlassPanel from './components/GlassPanel';
+import customDark from './theme/custom-dark.json';
 
 const { width, height } = Dimensions.get('window');
 const MAIN_MAX_WIDTH = 500;
@@ -1245,6 +1247,8 @@ function AppContent() {
           onPress={takePhoto}
           accessoryLeft={CameraIcon}
           size='large'
+          status='primary'
+          appearance='filled'
           disabled={apiHealth?.models_loading && !apiHealth?.ready_for_analysis}
         >
           Take A Photo
@@ -1255,7 +1259,8 @@ function AppContent() {
           onPress={pickImage}
           accessoryLeft={ImageIcon}
           size='large'
-          status='basic'
+          status='primary'
+          appearance='outline'
           disabled={apiHealth?.models_loading && !apiHealth?.ready_for_analysis}
         >
           Choose From Gallery
@@ -1313,7 +1318,7 @@ function AppContent() {
                 }
               ]}>
                 <LinearGradient
-                  colors={['#4f8cff', '#4fd1c5']}
+                  colors={['#4F8CFF', '#739CFF']}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                   style={{ width: '100%', height: '100%', borderRadius: 3 }}
@@ -1348,7 +1353,7 @@ function AppContent() {
   const renderStep3 = () => (
     <ScrollView contentContainerStyle={styles.resultsScrollViewContent}>
       <Layout style={[styles.stepContainer, { maxWidth: MAIN_MAX_WIDTH, width: '100%', alignSelf: 'center', paddingLeft: 0, paddingRight: 0 }]}> 
-        <Layout style={styles.headerContainer}>
+        <Layout style={[styles.headerContainer, { paddingHorizontal: 0, paddingVertical: 0 }]}> 
           <Text category='h4' style={styles.stepTitle}>🎯 Analysis Results</Text>
           <Text category='s1' style={styles.stepSubtitle}>
             Age estimation complete
@@ -1358,6 +1363,18 @@ function AppContent() {
           results.faces.filter(face => face.confidence >= 0.9).map((face, index) => {
             const filteredFaces = results.faces.filter(face => face.confidence >= 0.9);
             const isSingleFace = filteredFaces.length === 1;
+            
+            // Compute consensus (prefer calibrated Harvard if available, exclude ChatGPT)
+            const harvardPrimary = (face.age_harvard_calibrated ?? face.age_harvard);
+            const consensusAges = [];
+            if (harvardPrimary !== null && harvardPrimary !== undefined) consensusAges.push(harvardPrimary);
+            if (face.age_deepface !== null && face.age_deepface !== undefined) consensusAges.push(face.age_deepface);
+            let consensus = null;
+            if (consensusAges.length > 0) {
+              const sorted = [...consensusAges].sort((a, b) => a - b);
+              const mid = Math.floor(sorted.length / 2);
+              consensus = (sorted.length % 2 !== 0) ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+            }
             
             return (
               <Card key={index} style={[
@@ -1370,9 +1387,16 @@ function AppContent() {
                     <Text category='h6' style={styles.resultTitle}>
                       Face {index + 1}
                     </Text>
-                    <Text category='c1' style={styles.confidenceText}>
-                      {(face.confidence * 100).toFixed(1)}% confidence
-                    </Text>
+                    <Layout style={styles.resultHeaderRight}>
+                      {consensus !== null && (
+                        <View style={styles.consensusPill}>
+                          <Text style={styles.consensusPillText}>Consensus {Math.round(consensus)} yrs</Text>
+                        </View>
+                      )}
+                      <Text category='c1' style={styles.confidenceText}>
+                        {(face.confidence * 100).toFixed(1)}% confidence
+                      </Text>
+                    </Layout>
                   </Layout>
                 )}
                 
@@ -1397,7 +1421,7 @@ function AppContent() {
                           shadowOpacity: 0.1,
                           shadowRadius: 8,
                           elevation: 5,
-                          backgroundColor: '#fff',
+                          backgroundColor: '#151922',
                           justifyContent: 'center',
                           alignItems: 'center',
                         }}>
@@ -1417,22 +1441,24 @@ function AppContent() {
                   </Layout>
 
                   {/* Age Estimation Results */}
-                  <Layout style={{
+                  <GlassPanel style={{
                     marginTop: 14,
                     marginBottom: 14,
-                    backgroundColor: 'white',
-                    borderRadius: 12,
+                    borderRadius: 16,
                     padding: 14,
-                    borderWidth: 0,
-                    shadowColor: '#000',
-                    shadowOffset: { width: 0, height: 2 },
-                    shadowOpacity: 0.04,
-                    shadowRadius: 4,
-                    elevation: 1,
                     width: '100%',
                     alignSelf: 'center',
+                    borderWidth: 1,
+                    borderColor: 'rgba(255,255,255,0.06)'
                   }}>
-                    <Text style={{ fontSize: 13, fontWeight: '700', color: '#4a5a6a', marginBottom: 8, letterSpacing: 0.2, textAlign: 'left' }}>AGE ESTIMATES</Text>
+                    <Layout style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'transparent', marginBottom: 8 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: '#E6EAF2', letterSpacing: 0.2 }}>AGE ESTIMATES</Text>
+                      {isSingleFace && consensus !== null && (
+                        <View style={styles.consensusPill}>
+                          <Text style={styles.consensusPillText}>Consensus {Math.round(consensus)} yrs</Text>
+                        </View>
+                      )}
+                    </Layout>
                     {/* Model rows */}
                     {(() => {
                       const modelRows = [];
@@ -1440,27 +1466,24 @@ function AppContent() {
                       if (face.age_harvard_calibrated !== null && face.age_harvard_calibrated !== undefined) modelRows.push({ key: 'harvard_calibrated', value: face.age_harvard_calibrated });
                       if (face.age_deepface !== null && face.age_deepface !== undefined) modelRows.push({ key: 'deepface', value: face.age_deepface });
                       if (face.age_chatgpt !== null && face.age_chatgpt !== undefined) modelRows.push({ key: 'chatgpt', value: face.age_chatgpt });
-                      // Mean (exclude calibrated to avoid double-counting Harvard)
-                      const ages = modelRows.filter(r => (r.key === 'harvard' || r.key === 'deepface' || r.key === 'chatgpt')).map(r => r.value);
-                      const mean = ages.length ? (ages.reduce((a, b) => a + b, 0) / ages.length) : null;
                       return <>
                         {modelRows.map((row, i) => (
-                          <Layout key={row.key} style={{ marginBottom: i === modelRows.length - 1 ? 0 : 12 }}>
+                          <Layout key={row.key} style={{ marginBottom: i === modelRows.length - 1 ? 0 : 12, backgroundColor: 'transparent' }}>
                             <Layout style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'transparent', minHeight: 36 }}>
                               <Text style={{ fontSize: 18, marginRight: 8 }}>{MODEL_ICONS[row.key]}</Text>
-                              <Layout style={{ flex: 1 }}>
-                                <Text style={{ fontWeight: '600', fontSize: 14, color: '#223', marginBottom: 1 }}>{MODEL_LABELS[row.key]}</Text>
-                                <Text style={{ fontSize: 11, color: '#7a869a', marginBottom: 2 }}>{MODEL_DESCRIPTIONS[row.key]}</Text>
+                              <Layout style={{ flex: 1, backgroundColor: 'transparent' }}>
+                                <Text style={{ fontWeight: '600', fontSize: 14, color: '#E6EAF2', marginBottom: 1 }}>{MODEL_LABELS[row.key]}</Text>
+                                <Text style={{ fontSize: 11, color: '#9AA3AF', marginBottom: 2 }}>{MODEL_DESCRIPTIONS[row.key]}</Text>
                               </Layout>
-                              <Text style={{ fontWeight: 'bold', fontSize: 15 }}>{Math.round(row.value)}<Text style={{ fontSize: 12, color: '#888' }}> yrs</Text></Text>
+                              <Text style={{ fontWeight: 'bold', fontSize: 15, color: '#E6EAF2' }}>{Math.round(row.value)}<Text style={{ fontSize: 12, color: '#9AA3AF' }}> yrs</Text></Text>
                             </Layout>
-                            <View style={{ position: 'relative', height: 7, width: '100%', borderRadius: 4, backgroundColor: '#e6eaf2', overflow: 'hidden', marginTop: 2, marginBottom: 2 }}>
+                            <View style={{ position: 'relative', height: 7, width: '100%', borderRadius: 4, backgroundColor: 'rgba(27,32,43,0.8)', overflow: 'hidden', marginTop: 2, marginBottom: 2 }}>
                               {(() => {
                                 const min = 0, max = 100;
                                 const percent = Math.max(0, Math.min(1, ((row.value - min) / (max - min))));
                                 return percent > 0 ? (
                                   <LinearGradient
-                                    colors={['#4f8cff', '#4fd1c5']}
+                                    colors={['#4F8CFF', '#739CFF']}
                                     start={{ x: 0, y: 0 }}
                                     end={{ x: 1, y: 0 }}
                                     style={{
@@ -1477,59 +1500,31 @@ function AppContent() {
                               })()}
                             </View>
                             {i !== modelRows.length - 1 && (
-                              <View style={{ height: 1, backgroundColor: '#eee', marginTop: 12, marginBottom: 12, marginLeft: 0 }} />
+                              <View style={{ height: 1, backgroundColor: 'rgba(27,32,43,0.8)', marginTop: 12, marginBottom: 12, marginLeft: 0 }} />
                             )}
                           </Layout>
                         ))}
-                        {/* Separator and mean row */}
-                        {mean !== null && (
-                          <View style={{
-                            marginTop: 18,
-                            marginBottom: 4,
-                            backgroundColor: '#e6f0fa',
-                            borderRadius: 10,
-                            padding: 12,
-                            alignItems: 'center',
-                            flexDirection: 'row',
-                            justifyContent: 'center',
-                            gap: 8,
-                            shadowColor: '#4f8cff',
-                            shadowOffset: { width: 0, height: 2 },
-                            shadowOpacity: 0.08,
-                            shadowRadius: 6,
-                            elevation: 2,
-                          }}>
-                            <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#1976d2', marginRight: 8 }}>📊</Text>
-                            <Text style={{ fontSize: 16, fontWeight: '700', color: '#1976d2', marginRight: 8 }}>Mean Age</Text>
-                            <Text style={{ fontSize: 22, fontWeight: 'bold', color: '#1976d2' }}>{Math.round(mean)}<Text style={{ fontSize: 13, color: '#888' }}> yrs</Text></Text>
-                          </View>
-                        )}
                       </>;
                     })()}
-                  </Layout>
+                  </GlassPanel>
                 </Layout>
 
                 {/* Age Factors */}
                 {face.chatgpt_factors && (
-                  <Layout style={{
+                  <GlassPanel style={{
                     marginTop: 14,
                     marginBottom: 14,
-                    backgroundColor: 'white',
-                    borderRadius: 12,
+                    borderRadius: 16,
                     padding: 14,
-                    borderWidth: 0,
-                    shadowColor: '#000',
-                    shadowOffset: { width: 0, height: 2 },
-                    shadowOpacity: 0.04,
-                    shadowRadius: 4,
-                    elevation: 1,
                     width: '100%',
                     alignSelf: 'center',
                     position: 'relative',
                     overflow: 'hidden',
+                    borderWidth: 1,
+                    borderColor: 'rgba(255,255,255,0.06)'
                   }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-                      <Text style={{ fontSize: 13, fontWeight: '700', color: '#4a5a6a', letterSpacing: 0.2, textAlign: 'left' }}>AGE FACTORS</Text>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: '#E6EAF2', letterSpacing: 0.2, textAlign: 'left' }}>AGE FACTORS</Text>
                       {!user && (
                         <View style={{
                           backgroundColor: '#FF9800',
@@ -1558,18 +1553,18 @@ function AppContent() {
                         if (!f) return null;
                         const percent = Math.max(0, Math.min(1, ((f.age_rating - 0) / 100)));
                         return (
-                          <Layout key={factor} style={{ marginBottom: i === arr.length - 1 ? 0 : 12 }}>
+                          <Layout key={factor} style={{ marginBottom: i === arr.length - 1 ? 0 : 12, backgroundColor: 'transparent' }}>
                             <Layout style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'transparent', minHeight: 36 }}>
                               <Text style={{ fontSize: 20, marginRight: 8 }}>{AGE_FACTOR_ICONS[factor]}</Text>
-                              <Layout style={{ flex: 1 }}>
-                                <Text style={{ fontWeight: '600', fontSize: 14, color: '#223', marginBottom: 1 }}>{AGE_FACTOR_LABELS[factor]}</Text>
-                                <Text style={{ fontSize: 11, color: '#7a869a', marginBottom: 2 }}>{f.explanation}</Text>
+                              <Layout style={{ flex: 1, backgroundColor: 'transparent' }}>
+                                <Text style={{ fontWeight: '600', fontSize: 14, color: '#E6EAF2', marginBottom: 1 }}>{AGE_FACTOR_LABELS[factor]}</Text>
+                                <Text style={{ fontSize: 11, color: '#9AA3AF', marginBottom: 2 }}>{f.explanation}</Text>
                               </Layout>
-                              <Text style={{ fontWeight: 'bold', fontSize: 15, color: '#223', marginLeft: 10, minWidth: 32, textAlign: 'right' }}>{f.age_rating} <Text style={{ fontSize: 11, color: '#7a869a' }}>yrs</Text></Text>
+                              <Text style={{ fontWeight: 'bold', fontSize: 15, color: '#E6EAF2', marginLeft: 10, minWidth: 32, textAlign: 'right' }}>{f.age_rating} <Text style={{ fontSize: 11, color: '#9AA3AF' }}>yrs</Text></Text>
                             </Layout>
-                            <View style={{ position: 'relative', height: 7, width: '100%', borderRadius: 4, backgroundColor: '#e6eaf2', overflow: 'hidden', marginTop: 2, marginBottom: 2 }}>
+                            <View style={{ position: 'relative', height: 7, width: '100%', borderRadius: 4, backgroundColor: 'rgba(27,32,43,0.8)', overflow: 'hidden', marginTop: 2, marginBottom: 2 }}>
                               <LinearGradient
-                                colors={['#4f8cff', '#4fd1c5']}
+                                colors={['#4F8CFF', '#739CFF']}
                                 start={{ x: 0, y: 0 }}
                                 end={{ x: 1, y: 0 }}
                                 style={{
@@ -1584,7 +1579,7 @@ function AppContent() {
                               />
                             </View>
                             {i !== arr.length - 1 && (
-                              <View style={{ height: 1, backgroundColor: '#eee', marginTop: 12, marginBottom: 12, marginLeft: 0 }} />
+                              <View style={{ height: 1, backgroundColor: 'rgba(27,32,43,0.8)', marginTop: 12, marginBottom: 12, marginLeft: 0 }} />
                             )}
                           </Layout>
                         );
@@ -1599,7 +1594,7 @@ function AppContent() {
                         left: 0,
                         right: 0,
                         bottom: 0,
-                        backgroundColor: 'rgba(255, 255, 255, 0.7)',
+                        backgroundColor: 'rgba(14, 17, 22, 0.6)',
                         backdropFilter: 'blur(4px)',
                         display: 'flex',
                         alignItems: 'center',
@@ -1614,7 +1609,7 @@ function AppContent() {
                           <Text style={{
                             fontSize: 16,
                             fontWeight: '600',
-                            color: '#333',
+                            color: '#E6EAF2',
                             textAlign: 'center',
                             marginBottom: 8,
                           }}>
@@ -1622,7 +1617,7 @@ function AppContent() {
                           </Text>
                           <Text style={{
                             fontSize: 13,
-                            color: '#666',
+                            color: '#9AA3AF',
                             textAlign: 'center',
                             marginBottom: 20,
                             lineHeight: 18,
@@ -1631,11 +1626,11 @@ function AppContent() {
                           </Text>
                           <TouchableOpacity
                             style={{
-                              backgroundColor: '#4f8cff',
+                              backgroundColor: '#4F8CFF',
                               paddingVertical: 12,
                               paddingHorizontal: 24,
                               borderRadius: 25,
-                              shadowColor: '#4f8cff',
+                              shadowColor: '#4F8CFF',
                               shadowOffset: { width: 0, height: 4 },
                               shadowOpacity: 0.3,
                               shadowRadius: 8,
@@ -1655,7 +1650,7 @@ function AppContent() {
                         </View>
                       </View>
                     )}
-                  </Layout>
+                  </GlassPanel>
                 )}
               </Layout>
             </Card>
@@ -1688,16 +1683,17 @@ function AppContent() {
             style={styles.secondaryButton}
             onPress={() => setCurrentStep(1)}
             accessoryLeft={ArrowBackIcon}
-            status='basic'
+            status='primary'
+            appearance='outline'
           >
             Try Another Photo
           </Button>
         </Layout>
-        <AppFooter 
-          onShowModal={(contentType) => { setModalContent(contentType); setModalVisible(true); }} 
-          onShowInfo={() => setInfoVisible(true)}
-        />
       </Layout>
+      <AppFooter 
+        onShowModal={(contentType) => { setModalContent(contentType); setModalVisible(true); }} 
+        onShowInfo={() => setInfoVisible(true)}
+      />
     </ScrollView>
   );
 
@@ -1705,7 +1701,7 @@ function AppContent() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar style="auto" backgroundColor="#ffffff" barStyle="dark-content" />
+      <StatusBar style="light" backgroundColor="#0E1116" />
       <AppHeader 
         onShowInfo={() => setInfoVisible(true)} 
         user={user}
@@ -1732,7 +1728,7 @@ export default function App() {
   return (
     <Fragment>
       <IconRegistry icons={EvaIconsPack} />
-      <ApplicationProvider {...eva} theme={eva.light}>
+      <ApplicationProvider {...eva} theme={{ ...eva.dark, ...customDark }}>
         <AppContent />
       </ApplicationProvider>
     </Fragment>
@@ -1742,33 +1738,33 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#ffffff', // pure white to match iPhone
+    backgroundColor: '#0E1116',
   },
   fullScreen: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#0E1116',
   },
   stepContainer: {
     flex: 1,
     padding: 20,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#0E1116',
   },
   headerContainer: {
     alignItems: 'center',
-    marginBottom: 15,
-    paddingTop: 10,
+    marginBottom: 12,
+    paddingTop: 6,
   },
   stepTitle: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#1a2a3a',
+    color: '#E6EAF2',
     textAlign: 'center',
     marginTop: 16,
     marginBottom: 4,
   },
   stepSubtitle: {
     fontSize: 16,
-    color: '#7a869a',
+    color: '#9AA3AF',
     textAlign: 'center',
     marginBottom: 12,
   },
@@ -1820,9 +1816,10 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
   },
   secondaryButton: {
-    backgroundColor: '#f6f8fa',
+    backgroundColor: '#151922',
     borderRadius: 24,
-    borderWidth: 0,
+    borderWidth: 1,
+    borderColor: '#2a2f3a',
     marginBottom: 10,
     paddingVertical: 14,
   },
@@ -1831,12 +1828,12 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   toggleButton: {
-    backgroundColor: '#f6f8fa',
+    backgroundColor: '#151922',
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderWidth: 1,
-    borderColor: '#e1e5e9',
+    borderColor: '#2a2f3a',
   },
   toggleButtonActive: {
     backgroundColor: '#4f8cff',
@@ -1845,7 +1842,7 @@ const styles = StyleSheet.create({
   toggleButtonText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#6b7280',
+    color: '#9AA3AF',
   },
   toggleButtonTextActive: {
     color: '#ffffff',
@@ -1938,7 +1935,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   resultCard: {
-    marginBottom: 15,
+    marginBottom: 12,
     borderRadius: 15,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -1956,7 +1953,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 15,
+    marginBottom: 10,
+  },
+  resultHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   resultTitle: {
     fontWeight: 'bold',
@@ -1964,8 +1966,22 @@ const styles = StyleSheet.create({
   confidenceText: {
     opacity: 0.7,
   },
+  consensusPill: {
+    borderRadius: 999,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(79,140,255,0.28)',
+    backgroundColor: 'rgba(46,90,199,0.18)',
+  },
+  consensusPillText: {
+    color: '#E6EAF2',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
   resultContent: {
-    gap: 20,
+    gap: 14,
   },
   analysisHeader: {
     flexDirection: 'row',
@@ -1973,11 +1989,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     paddingHorizontal: 16,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#151922',
     borderRadius: 8,
     marginBottom: 15,
     borderWidth: 1,
-    borderColor: '#e9ecef',
+    borderColor: '#2a2f3a',
   },
   analysisLabel: {
     color: '#3366FF',
@@ -2001,10 +2017,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   analysisGrid: {
-    gap: 20,
+    gap: 14,
   },
   faceDetectionArea: {
-    gap: 12,
+    gap: 10,
   },
   ageEstimationArea: {
     gap: 12,
@@ -2019,7 +2035,7 @@ const styles = StyleSheet.create({
   faceCropContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginVertical: 12,
+    marginVertical: 10,
     backgroundColor: 'transparent',
     position: 'relative',
   },
@@ -2027,8 +2043,8 @@ const styles = StyleSheet.create({
     width: 200,
     height: 200,
     borderRadius: 20,
-    borderWidth: 5,
-    borderColor: '#fff',
+    borderWidth: 2,
+    borderColor: '#1B202B',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.2,
@@ -2110,23 +2126,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   ageResultsContainer: {
-    gap: 12,
+    gap: 10,
   },
   ageResultCard: {
-    backgroundColor: '#fff',
+    backgroundColor: '#151922',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#e9ecef',
+    borderColor: '#2a2f3a',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 2,
-    marginBottom: 14,
+    marginBottom: 10,
     width: '100%',
     alignSelf: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
     minHeight: 56,
   },
   ageResultRow: {
@@ -2134,7 +2150,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     width: '100%',
-    paddingHorizontal: 4,
+    paddingHorizontal: 2,
   },
   modelInfoContainer: {
     flexDirection: 'row',
@@ -2152,7 +2168,7 @@ const styles = StyleSheet.create({
   },
   modelName: {
     fontWeight: 'bold',
-    color: '#333',
+    color: '#E6EAF2',
     marginLeft: 4,
     marginRight: 8,
     fontSize: 15,
@@ -2163,7 +2179,7 @@ const styles = StyleSheet.create({
   },
   modelSubtitle: {
     fontSize: 12,
-    color: '#8a99b3', // light gray-blue
+    color: '#9AA3AF',
     marginTop: 2,
     marginBottom: 0,
     fontWeight: '400',
@@ -2188,7 +2204,7 @@ const styles = StyleSheet.create({
   },
   tooltipText: {
     fontSize: 10,
-    color: '#666',
+    color: '#9AA3AF',
     fontStyle: 'italic',
     marginTop: 4,
     marginBottom: 8,
@@ -2215,7 +2231,7 @@ const styles = StyleSheet.create({
   },
   ageUnit: {
     fontSize: 12,
-    color: '#666',
+    color: '#9AA3AF',
     textAlign: 'center',
     marginTop: 2,
   },
@@ -2233,16 +2249,16 @@ const styles = StyleSheet.create({
   },
   summaryCard: {
     padding: 16,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#151922',
     borderRadius: 12,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#e9ecef',
+    borderColor: '#2a2f3a',
   },
   summaryAge: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#333',
+    color: '#E6EAF2',
     marginBottom: 4,
   },
   summaryCategory: {
@@ -2255,7 +2271,7 @@ const styles = StyleSheet.create({
   ageIndicator: {
     width: '100%',
     height: 4,
-    backgroundColor: '#e9ecef',
+    backgroundColor: '#2a2f3a',
     borderRadius: 2,
     overflow: 'hidden',
   },
@@ -2284,7 +2300,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20, // add horizontal padding to match cards
   },
   shareButton: {
-    backgroundColor: '#2196f3',
     borderRadius: 24,
     marginTop: 10,
     marginBottom: 8,
@@ -2302,7 +2317,7 @@ const styles = StyleSheet.create({
     borderWidth: 0,
     borderColor: 'transparent',
     borderStyle: 'none',
-    backgroundColor: '#fff',
+    backgroundColor: '#151922',
     maxWidth: 500,
     width: '100%',
     alignSelf: 'center',
@@ -2341,9 +2356,9 @@ const styles = StyleSheet.create({
   infoModalCard: {
     borderRadius: 16,
     padding: 24,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#151922',
     borderWidth: 1,
-    borderColor: '#e9ecef',
+    borderColor: '#2a2f3a',
     minWidth: 300,
     maxWidth: 340,
     alignSelf: 'center',
@@ -2379,7 +2394,7 @@ const styles = StyleSheet.create({
   },
   summaryText: {
     fontSize: 16,
-    color: '#555',
+    color: '#E6EAF2',
     textAlign: 'center',
     marginTop: 10,
     marginBottom: 15,
@@ -2398,7 +2413,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontWeight: 'bold',
-    color: '#1a2a3a',
+    color: '#E6EAF2',
     fontSize: 20,
     letterSpacing: 0.5,
   },
@@ -2408,9 +2423,9 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   headerNav: {
-    backgroundColor: '#fff',
+    backgroundColor: '#0E1116',
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: '#1B202B',
     minHeight: 60,
     paddingHorizontal: 8,
   },
@@ -2428,7 +2443,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-start',
     minHeight: height,
-    backgroundColor: '#fff',
+    backgroundColor: '#0E1116',
     width: '100%',
   },
   analyzingPageContent: {
@@ -2436,7 +2451,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     minHeight: height - 160, // Account for header height, safe areas, and iOS-specific elements
-    backgroundColor: '#fff',
+    backgroundColor: '#0E1116',
     width: '100%',
   },
   footer: {
@@ -2456,16 +2471,16 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   footerLink: {
-    color: '#3B82F6',
+    color: '#4F8CFF',
     fontSize: 14,
     fontWeight: '500',
   },
   footerSeparator: {
-    color: '#666',
+    color: '#9AA3AF',
     marginHorizontal: 8,
   },
   footerCopyright: {
-    color: '#666',
+    color: '#9AA3AF',
     fontSize: 12,
     textAlign: 'center',
   },
@@ -2477,7 +2492,7 @@ const styles = StyleSheet.create({
   modalText: {
     fontSize: 14,
     lineHeight: 20,
-    color: '#333',
+    color: '#E6EAF2',
   },
   modalSectionTitle: {
     fontWeight: 'bold',

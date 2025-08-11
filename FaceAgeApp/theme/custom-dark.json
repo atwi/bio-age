@@ -1,0 +1,18 @@
+{
+  "color-primary-100": "#E6F0FF",
+  "color-primary-200": "#C2D6FF",
+  "color-primary-300": "#9AB8FF",
+  "color-primary-400": "#739CFF",
+  "color-primary-500": "#4F8CFF",
+  "color-primary-600": "#3C73E6",
+  "color-primary-700": "#2E5AC7",
+  "color-primary-800": "#2346A3",
+  "color-primary-900": "#1A357F",
+
+  "background-basic-color-1": "#0E1116",
+  "background-basic-color-2": "#151922",
+  "background-basic-color-3": "#1B202B",
+
+  "text-basic-color": "#E6EAF2",
+  "text-hint-color": "#9AA3AF"
+} 
