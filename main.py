@@ -11,13 +11,14 @@ import gc
 import time
 import base64
 import logging
+import json
 from io import BytesIO
 from typing import Optional, Dict, Any, List
 from contextlib import asynccontextmanager
 
 import numpy as np
 import uvicorn
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Request
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -35,6 +36,7 @@ from threading import Thread
 # Global variables for lazy loading
 detector = None
 harvard_model = None
+harvard_calibration = None
 deepface_ready = False
 models_loading = False
 
@@ -55,6 +57,8 @@ ENABLE_FEATURE_OUTLINES = os.environ.get('ENABLE_FEATURE_OUTLINES', 'false').low
 ENABLE_TESSELLATION = os.environ.get('ENABLE_TESSELLATION', 'false').lower() == 'true'
 ENABLE_HAIR_SEGMENTATION = os.environ.get('ENABLE_HAIR_SEGMENTATION', 'false').lower() == 'true'
 ENABLE_FACE_FILL = os.environ.get('ENABLE_FACE_FILL', 'false').lower() == 'true'
+ENABLE_HARVARD_CALIBRATION = os.environ.get('ENABLE_HARVARD_CALIBRATION', 'true').lower() == 'true'
+HARVARD_CALIBRATION_PATH = os.environ.get('HARVARD_CALIBRATION_PATH', 'calibration/harvard_isotonic_young_global.json')
 
 # Debug logging for environment variables - FORCE REDEPLOY 2024-12-19
 print(f"🔍 DEBUG: RAILWAY_ENVIRONMENT = {os.environ.get('RAILWAY_ENVIRONMENT', 'NOT_SET')}")
@@ -71,6 +75,8 @@ print(f"🔍 DEBUG: ENABLE_FEATURE_OUTLINES parsed = {ENABLE_FEATURE_OUTLINES}")
 print(f"🔍 DEBUG: ENABLE_TESSELLATION parsed = {ENABLE_TESSELLATION}")
 print(f"🔍 DEBUG: ENABLE_HAIR_SEGMENTATION parsed = {ENABLE_HAIR_SEGMENTATION}")
 print(f"🔍 DEBUG: ENABLE_FACE_FILL parsed = {ENABLE_FACE_FILL}")
+print(f"🔍 DEBUG: ENABLE_HARVARD_CALIBRATION parsed = {ENABLE_HARVARD_CALIBRATION}")
+print(f"�� DEBUG: HARVARD_CALIBRATION_PATH = {HARVARD_CALIBRATION_PATH}")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -95,6 +101,7 @@ def log_memory_usage(context=""):
 class FaceResult(BaseModel):
     face_id: int
     age_harvard: Optional[float] = None
+    age_harvard_calibrated: Optional[float] = None
     age_deepface: Optional[float] = None
     age_chatgpt: Optional[int] = None
     chatgpt_factors: Optional[dict] = None  # New: factor breakdown
@@ -111,7 +118,7 @@ class AnalyzeResponse(BaseModel):
 
 def background_load_models():
     """Load models in background thread - non-blocking"""
-    global detector, harvard_model, deepface_ready, models_loading
+    global detector, harvard_model, harvard_calibration, deepface_ready, models_loading
     
     if models_loading or (detector is not None and (harvard_model is not None or not LOAD_HARVARD) and (deepface_ready or not ENABLE_DEEPFACE)):
         return
@@ -137,6 +144,20 @@ def background_load_models():
             else:
                 logger.warning("⚠️ Harvard model failed to load, continuing without it")
             gc.collect()
+
+        # Load calibration if enabled
+        if ENABLE_HARVARD_CALIBRATION and harvard_calibration is None:
+            try:
+                if os.path.exists(HARVARD_CALIBRATION_PATH):
+                    with open(HARVARD_CALIBRATION_PATH, 'r', encoding='utf-8') as f:
+                        harvard_calibration = json.load(f)
+                    logger.info(f"✅ Loaded Harvard calibration from {HARVARD_CALIBRATION_PATH}")
+                else:
+                    logger.warning(f"⚠️ Harvard calibration file not found at {HARVARD_CALIBRATION_PATH}")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to load Harvard calibration: {e}")
+
+        # (Fine-tuned Harvard disabled)
         
         # Test DeepFace last (largest) - only if enabled
         if ENABLE_DEEPFACE and not deepface_ready:
@@ -160,7 +181,7 @@ def background_load_models():
 
 def lazy_load_models():
     """Lazy load models only when needed"""
-    global detector, harvard_model, deepface_ready, models_loading
+    global detector, harvard_model, harvard_calibration, deepface_ready, models_loading
     
     if models_loading:
         return False
@@ -189,6 +210,20 @@ def lazy_load_models():
             else:
                 logger.warning("⚠️ Harvard model failed to load, continuing without it")
             gc.collect()
+
+        # Load calibration if enabled
+        if ENABLE_HARVARD_CALIBRATION and harvard_calibration is None:
+            try:
+                if os.path.exists(HARVARD_CALIBRATION_PATH):
+                    with open(HARVARD_CALIBRATION_PATH, 'r', encoding='utf-8') as f:
+                        harvard_calibration = json.load(f)
+                    logger.info(f"✅ Loaded Harvard calibration from {HARVARD_CALIBRATION_PATH}")
+                else:
+                    logger.warning(f"⚠️ Harvard calibration file not found at {HARVARD_CALIBRATION_PATH}")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to load Harvard calibration: {e}")
+
+        # (Fine-tuned Harvard disabled)
         
         # Test DeepFace last (largest) - only if enabled
         if ENABLE_DEEPFACE and not deepface_ready:
@@ -210,7 +245,7 @@ def lazy_load_models():
         has_harvard = harvard_model is not None
         has_deepface = deepface_ready or not ENABLE_DEEPFACE
         
-        logger.info(f"📊 Model status: Face detector: {has_face_detector}, Harvard: {has_harvard}, DeepFace: {has_deepface}")
+        logger.info(f"📊 Model status: Face detector: {has_face_detector}, Harvard: {has_harvard}, DeepFace ready: {has_deepface}")
         
         # We need face detector and at least one age estimation model
         if has_face_detector and (has_harvard or has_deepface):
@@ -329,6 +364,35 @@ def test_deepface():
     except Exception as e:
         logger.error(f"DeepFace test failed: {e}")
         return False
+
+def _apply_piecewise_linear(x_thresholds: list, y_values: list, x: float) -> float:
+    try:
+        if not x_thresholds or not y_values or len(x_thresholds) != len(y_values):
+            return float(x)
+        x_arr = np.array(x_thresholds, dtype=float)
+        y_arr = np.array(y_values, dtype=float)
+        x_clipped = float(np.clip(x, x_arr[0], x_arr[-1]))
+        return float(np.interp(x_clipped, x_arr, y_arr))
+    except Exception:
+        return float(x)
+
+def apply_harvard_calibration(raw_pred: Optional[float]) -> Optional[float]:
+    if raw_pred is None:
+        return None
+    if not ENABLE_HARVARD_CALIBRATION or harvard_calibration is None:
+        return float(max(0, min(120, raw_pred)))
+    try:
+        fg = harvard_calibration.get('f_global', {})
+        fy = harvard_calibration.get('f_young', {})
+        bw = harvard_calibration.get('blend_window_pred', {"t0": 38.0, "t1": 43.0})
+        g = _apply_piecewise_linear(fg.get('x_thresholds', []), fg.get('y_values', []), float(raw_pred))
+        y = _apply_piecewise_linear(fy.get('x_thresholds', []), fy.get('y_values', []), float(raw_pred))
+        t0 = float(bw.get('t0', 38.0)); t1 = float(bw.get('t1', 43.0))
+        w = float(np.clip((float(raw_pred) - t0) / max(t1 - t0, 1e-6), 0.0, 1.0))
+        blended = (1.0 - w) * y + w * g
+        return float(max(0.0, min(120.0, blended)))
+    except Exception:
+        return float(max(0, min(120, raw_pred)))
 
 def estimate_age_chatgpt(image_base64: str) -> dict:
     """Estimate age and aging factors using ChatGPT Vision with function calling. Returns dict with result, raw, fallback, error."""
@@ -982,6 +1046,7 @@ async def health_check():
 async def api_health_check():
     # Don't trigger model loading, just report current status
     harvard_status = harvard_model is not None
+    calib_loaded = harvard_calibration is not None if 'harvard_calibration' in globals() else False
     deepface_status = deepface_ready if 'deepface_ready' in globals() else False
     chatgpt_status = bool(os.environ.get('OPENAI_API_KEY')) and ENABLE_CHATGPT
     return {
@@ -998,6 +1063,8 @@ async def api_health_check():
             "enable_deepface": ENABLE_DEEPFACE,
             "enable_chatgpt": ENABLE_CHATGPT,
             "load_harvard": LOAD_HARVARD,
+            "enable_harvard_calibration": ENABLE_HARVARD_CALIBRATION,
+            "harvard_calibration_loaded": calib_loaded,
             "enable_feature_outlines": ENABLE_FEATURE_OUTLINES,
             "enable_tessellation": ENABLE_TESSELLATION,
             "enable_hair_segmentation": ENABLE_HAIR_SEGMENTATION,
@@ -1005,10 +1072,47 @@ async def api_health_check():
         }
     }
 
+def _apply_piecewise_linear(x_thresholds: list, y_values: list, x: float) -> float:
+    try:
+        if not x_thresholds or not y_values or len(x_thresholds) != len(y_values):
+            return float(x)
+        x_arr = np.array(x_thresholds, dtype=float)
+        y_arr = np.array(y_values, dtype=float)
+        x_clipped = float(np.clip(x, x_arr[0], x_arr[-1]))
+        return float(np.interp(x_clipped, x_arr, y_arr))
+    except Exception:
+        return float(x)
+
+def apply_harvard_calibration(raw_pred: Optional[float]) -> Optional[float]:
+    if raw_pred is None:
+        return None
+    if not ENABLE_HARVARD_CALIBRATION or harvard_calibration is None:
+        return float(max(0, min(120, raw_pred)))
+    try:
+        fg = harvard_calibration.get('f_global', {})
+        fy = harvard_calibration.get('f_young', {})
+        bw = harvard_calibration.get('blend_window_pred', {"t0": 38.0, "t1": 43.0})
+        g = _apply_piecewise_linear(fg.get('x_thresholds', []), fg.get('y_values', []), float(raw_pred))
+        y = _apply_piecewise_linear(fy.get('x_thresholds', []), fy.get('y_values', []), float(raw_pred))
+        t0 = float(bw.get('t0', 38.0)); t1 = float(bw.get('t1', 43.0))
+        w = float(np.clip((float(raw_pred) - t0) / max(t1 - t0, 1e-6), 0.0, 1.0))
+        blended = (1.0 - w) * y + w * g
+        return float(max(0.0, min(120.0, blended)))
+    except Exception:
+        return float(max(0, min(120, raw_pred)))
+
 @app.post("/api/analyze-face", response_model=AnalyzeResponse)
-async def analyze_face(file: UploadFile = File(...)):
+async def analyze_face(request: Request, file: UploadFile = File(...)):
     log_memory_usage("Before analyze_face")
     try:
+        # Per-request ChatGPT disable (testing header or query)
+        disable_chatgpt = False
+        try:
+            hdr = request.headers.get("x-disable-chatgpt", "").lower()
+            qp = request.query_params.get("disable_chatgpt", "").lower() if hasattr(request, "query_params") else ""
+            disable_chatgpt = hdr in ("1", "true", "yes") or qp in ("1", "true", "yes")
+        except Exception:
+            disable_chatgpt = False
         # Lazy load models on first request
         if not lazy_load_models():
             # Check which models are available
@@ -1019,12 +1123,10 @@ async def analyze_face(file: UploadFile = File(...)):
                 available_models.append("harvard_model")
             if deepface_ready or not ENABLE_DEEPFACE:
                 available_models.append("deepface")
-            
             if not available_models:
                 raise HTTPException(status_code=500, detail="No models available for face analysis")
             else:
                 logger.warning(f"Limited models available: {available_models}")
-                # Continue with available models
         
         # Read and process image
         contents = await file.read()
@@ -1051,7 +1153,7 @@ async def analyze_face(file: UploadFile = File(...)):
                 message="No high-confidence faces detected (≥95% confidence required)"
             )
         
-        results = []
+        results: List[FaceResult] = []
         
         for i, face in enumerate(high_confidence_faces):
             logger.info(f"--- Processing face {i} ---")
@@ -1085,6 +1187,7 @@ async def analyze_face(file: UploadFile = File(...)):
                     logger.error(f"Face {i}: Error creating base64: {e}\n{traceback.format_exc()}")
                     face_base64 = ''
                 harvard_age = None
+                harvard_age_calibrated = None
                 if harvard_model is not None:
                     try:
                         logger.info(f"Face {i}: running Harvard model...")
@@ -1101,6 +1204,10 @@ async def analyze_face(file: UploadFile = File(...)):
                         harvard_age = float(np.squeeze(prediction))
                         harvard_age = max(0, min(120, harvard_age))
                         logger.info(f"Face {i}: Harvard age={harvard_age}")
+                        # Apply calibration if available
+                        if ENABLE_HARVARD_CALIBRATION:
+                            harvard_age_calibrated = apply_harvard_calibration(harvard_age)
+                            logger.info(f"Face {i}: Harvard calibrated age={harvard_age_calibrated}")
                     except Exception as e:
                         logger.warning(f"Face {i}: Harvard prediction failed: {e}\n{traceback.format_exc()}")
                 deepface_age = None
@@ -1131,7 +1238,7 @@ async def analyze_face(file: UploadFile = File(...)):
                 chatgpt_raw = None
                 chatgpt_fallback = None
                 chatgpt_error = None
-                if ENABLE_CHATGPT:
+                if ENABLE_CHATGPT and not disable_chatgpt:
                     try:
                         logger.info(f"Face {i}: Calling estimate_age_chatgpt...")
                         # Create base64 from ChatGPT-specific crop (with padding for hair/context)
@@ -1139,7 +1246,6 @@ async def analyze_face(file: UploadFile = File(...)):
                         chatgpt_face_buffer = BytesIO()
                         chatgpt_face_pil.save(chatgpt_face_buffer, format='PNG')
                         chatgpt_face_base64 = base64.b64encode(chatgpt_face_buffer.getvalue()).decode('utf-8')
-                        
                         chatgpt_response = estimate_age_chatgpt(chatgpt_face_base64)
                         chatgpt_result = chatgpt_response.get('function_args')
                         chatgpt_raw = chatgpt_response.get('raw_response')
@@ -1151,6 +1257,8 @@ async def analyze_face(file: UploadFile = File(...)):
                     except Exception as e:
                         logger.error(f"Face {i}: Exception in estimate_age_chatgpt: {e}\n{traceback.format_exc()}")
                         chatgpt_error = str(e)
+                elif disable_chatgpt:
+                    logger.info(f"Face {i}: 🚫 ChatGPT prediction skipped (per-request disable)")
                 else:
                     logger.info(f"Face {i}: 🚫 ChatGPT prediction skipped (disabled)")
                 chatgpt_age = None
@@ -1164,6 +1272,7 @@ async def analyze_face(file: UploadFile = File(...)):
                 results.append(FaceResult(
                     face_id=i,
                     age_harvard=harvard_age,
+                    age_harvard_calibrated=harvard_age_calibrated,
                     age_deepface=deepface_age,
                     age_chatgpt=chatgpt_age,
                     chatgpt_factors=chatgpt_factors,
@@ -1248,6 +1357,7 @@ if __name__ == "__main__":
     print(f"🌐 Frontend available: {os.path.exists(web_build_path)}")
     print(f"🔧 Railway environment: {IS_RAILWAY}")
     print(f"📊 Harvard model enabled: {LOAD_HARVARD}")
+    print(f"🧭 Harvard calibration enabled: {ENABLE_HARVARD_CALIBRATION}")
     print(f"🤖 DeepFace enabled: {ENABLE_DEEPFACE}")
     print(f"🤖 ChatGPT enabled: {ENABLE_CHATGPT}")
     print(f"⚡ Using background model loading for instant startup")

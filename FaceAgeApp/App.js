@@ -136,12 +136,14 @@ const AGE_FACTOR_LABELS = {
 // At the top, add icons/labels for models:
 const MODEL_ICONS = {
   harvard: '🎓',
+  harvard_calibrated: '🎯',
   deepface: '🤖',
   chatgpt: '💬',
   mean: '📊',
 };
 const MODEL_LABELS = {
   harvard: 'Harvard',
+  harvard_calibrated: 'Harvard (calibrated)',
   deepface: 'DeepFace',
   chatgpt: 'ChatGPT',
   mean: 'Mean Age',
@@ -149,6 +151,7 @@ const MODEL_LABELS = {
 
 const MODEL_DESCRIPTIONS = {
   harvard: 'Best for clinical/biological age estimation, people >40',
+  harvard_calibrated: 'Harvard corrected via monotonic calibration (better under 40)',
   deepface: 'Best for general face age estimation',
   chatgpt: 'Best for human-like age perception',
 };
@@ -392,6 +395,7 @@ function AppContent() {
         // Console log model status instead of displaying in UI
         console.log('🔍 Model Status:', {
           harvard: data.models?.harvard ? '✅ Ready' : '❌ Not Ready',
+          harvard_calibrated: data.models?.harvard_calibrated ? '✅ Ready' : '❌ Not Ready',
           deepface: data.models?.deepface ? '✅ Ready' : '❌ Not Ready', 
           chatgpt: data.models?.chatgpt ? '✅ Ready' : '❌ Not Ready',
           loading: data.models_loading ? '🔄 Loading...' : '✅ Complete',
@@ -873,6 +877,9 @@ function AppContent() {
       shareText += `Face ${index + 1}:\n`;
       if (face.age_harvard !== null && face.age_harvard !== undefined) {
         shareText += `🎯 Harvard Model: ${face.age_harvard.toFixed(1)} years\n`;
+      }
+      if (face.age_harvard_calibrated !== null && face.age_harvard_calibrated !== undefined) {
+        shareText += `🎯 Harvard (calibrated): ${Number(face.age_harvard_calibrated).toFixed(1)} years\n`;
       }
       if (face.age_deepface !== null && face.age_deepface !== undefined) {
         shareText += `🤖 DeepFace Model: ${face.age_deepface.toFixed(1)} years\n`;
@@ -1430,10 +1437,11 @@ function AppContent() {
                     {(() => {
                       const modelRows = [];
                       if (face.age_harvard !== null && face.age_harvard !== undefined) modelRows.push({ key: 'harvard', value: face.age_harvard });
+                      if (face.age_harvard_calibrated !== null && face.age_harvard_calibrated !== undefined) modelRows.push({ key: 'harvard_calibrated', value: face.age_harvard_calibrated });
                       if (face.age_deepface !== null && face.age_deepface !== undefined) modelRows.push({ key: 'deepface', value: face.age_deepface });
                       if (face.age_chatgpt !== null && face.age_chatgpt !== undefined) modelRows.push({ key: 'chatgpt', value: face.age_chatgpt });
-                      // Mean
-                      const ages = modelRows.map(r => r.value);
+                      // Mean (exclude calibrated to avoid double-counting Harvard)
+                      const ages = modelRows.filter(r => (r.key === 'harvard' || r.key === 'deepface' || r.key === 'chatgpt')).map(r => r.value);
                       const mean = ages.length ? (ages.reduce((a, b) => a + b, 0) / ages.length) : null;
                       return <>
                         {modelRows.map((row, i) => (
@@ -1672,6 +1680,7 @@ function AppContent() {
             onPress={shareResults}
             accessoryLeft={ShareIcon}
             status='primary'
+            appearance='filled'
           >
             Share Results
           </Button>
@@ -2280,6 +2289,12 @@ const styles = StyleSheet.create({
     marginTop: 10,
     marginBottom: 8,
     paddingVertical: 14,
+    borderWidth: 0,
+    borderColor: 'transparent',
+    // Remove focus/outline ring on web
+    outlineStyle: 'none',
+    outlineWidth: 0,
+    outlineColor: 'transparent',
   },
   webCameraCard: {
     flex: 1,

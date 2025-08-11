@@ -1,3 +1,9 @@
+# DEPRECATION NOTICE
+# This module is kept for legacy reference only and is not used by the current app.
+# Use `main.py`, which exposes routes under the `/api` prefix (e.g., `/api/analyze-face`).
+# Differences: this file uses `/analyze-face` without `/api` and has simplified loading.
+print("\u26a0\ufe0f DEPRECATED: 'api_backend.py' is legacy. Use 'main.py' (with '/api' routes).", flush=True)
+
 import os
 import sys
 import gc

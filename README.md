@@ -90,8 +90,8 @@ export ENABLE_DEEPFACE=true
 export LOAD_HARVARD_MODEL=true
 export PORT=8001
 
-# Run the Python backend
-python api_backend.py
+# Run the Python backend (use main.py)
+python main.py
 ```
 
 ### 5. Start Development Server

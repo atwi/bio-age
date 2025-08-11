@@ -58,3 +58,9 @@ FaceAge/
 .env
 .env.local
 .env.*.local 
+
+# Evaluation outputs (logs, CSVs, metrics)
+evaluation_results/
+
+# Fine-tuned model exports (large binaries, not for Git)
+model_saved_tf_finetuned_custom/ 
