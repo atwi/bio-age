@@ -1285,10 +1285,10 @@ function AppContent() {
   const renderStep1 = () => (
     <ScrollView contentContainerStyle={styles.mainContainer}>
       <Text category='h1' style={{ fontWeight: 'bold', textAlign: 'center', fontSize: 28, marginTop: 20, marginBottom: 10 }}>
-        🧬 AI Age Estimation from Your Face
+        🧬 Find Out How Old You Look – Instantly
       </Text>
       <Text category='s1' style={styles.stepSubtitle}>
-        Discover your biological and perceived age instantly using advanced AI facial analysis.
+      Upload or snap a photo to learn your biological and perceived age in seconds with advanced AI age recognition.
       </Text>
       {/* Upload/Take Photo UI below */}
       <View style={styles.demoImageContainer}>
@@ -1315,13 +1315,13 @@ function AppContent() {
         <Button
           style={styles.secondaryButton}
           onPress={pickImage}
-          accessoryLeft={ImageIcon}
+          accessoryLeft={(props) => <Icon {...props} name='image-outline' fill='#E5E7EB'/>}
           size='large'
-          status='primary'
+          status='basic'
           appearance='outline'
           disabled={apiHealth?.models_loading && !apiHealth?.ready_for_analysis}
         >
-          Choose From Gallery
+          <Text style={styles.secondaryButtonText}>Choose From Gallery</Text>
         </Button>
       </Layout>
       
@@ -2016,9 +2016,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#151922',
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: '#2a2f3a',
+    borderColor: '#2A3650',
     marginBottom: 10,
     paddingVertical: 14,
+  },
+  secondaryButtonText: {
+    color: '#E5E7EB',
+    fontSize: 16,
+    fontWeight: '600',
   },
   facialRegionsToggle: {
     alignItems: 'center',
