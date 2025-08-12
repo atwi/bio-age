@@ -1489,24 +1489,11 @@ function AppContent() {
                           justifyContent: 'center',
                           alignItems: 'center',
                           position: 'relative',
-                          // Neon gradient border
-                          borderWidth: 1,
-                          borderColor: 'transparent',
-                          background: 'linear-gradient(135deg, #00FFFF 0%, #4F8CFF 25%, #FF6B9D 50%, #4F8CFF 75%, #00FFFF 100%)',
-                          padding: 1,
+                          overflow: 'hidden',
                         }}>
-                          <View style={{
-                            width: '100%',
-                            height: '100%',
-                            borderRadius: 19,
-                            backgroundColor: '#151922',
-                            justifyContent: 'center',
-                            alignItems: 'center',
-                            overflow: 'hidden',
-                          }}>
                           <Image
                             source={{ uri: faceMeshOverlays[index] ? `data:image/jpeg;base64,${faceMeshOverlays[index]}` : `data:image/jpeg;base64,${face.face_crop_base64}` }}
-                            style={{ width: '100%', height: '100%', borderRadius: 19, transform: [{ scaleX: sourceIsSelfie ? -1 : 1 }] }}
+                            style={{ width: '100%', height: '100%', borderRadius: 20, transform: [{ scaleX: sourceIsSelfie ? -1 : 1 }] }}
                             resizeMode="cover"
                           />
                           
@@ -1547,7 +1534,6 @@ function AppContent() {
                               </Text>
                             </View>
                           )}
-                        </View>
                         </View>
                       </Layout>
                     )}
