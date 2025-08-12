@@ -120,6 +120,10 @@ const InfoIcon = (props) => (
   <Icon {...props} name='info-outline'/>
 );
 
+const ShieldAlertIcon = (props) => (
+  <Icon {...props} name='alert-triangle-outline'/>
+);
+
 const ANALYZE_IMAGE_SIZE = Math.min(width * 0.8, 320);
 
 const AGE_FACTOR_ICONS = {
@@ -1397,9 +1401,15 @@ function AppContent() {
     <ScrollView contentContainerStyle={styles.resultsScrollViewContent}>
       <Layout style={[styles.stepContainer, { maxWidth: MAIN_MAX_WIDTH, width: '100%', alignSelf: 'center', paddingLeft: 0, paddingRight: 0 }]}> 
         <Layout style={[styles.headerContainer, { paddingHorizontal: 0, paddingVertical: 0 }]}> 
-          <Text category='h4' style={styles.stepTitle}>🎯 Analysis Results</Text>
+          <Text category='h4' style={styles.stepTitle}>
+            {(results && results.faces && ((results.override_used && results.faces.length > 0) || (results.faces.filter(face => face.confidence >= 0.9).length > 0)))
+              ? '🎯 Analysis Results'
+              : (results && results.message === 'No faces detected' ? 'No Face Detected' : 'No Clear Face Detected')}
+          </Text>
           <Text category='s1' style={styles.stepSubtitle}>
-            Age estimation complete
+            {(results && results.faces && ((results.override_used && results.faces.length > 0) || (results.faces.filter(face => face.confidence >= 0.9).length > 0)))
+              ? 'Age estimation complete'
+              : 'Try a front-facing photo in good lighting.'}
           </Text>
         </Layout>
         {results && results.faces && ((results.override_used && results.faces.length > 0) || results.faces.filter(face => face.confidence >= 0.9).length > 0) ? (
@@ -1686,51 +1696,29 @@ function AppContent() {
             </Card>
           );
           })
-        ) : (
-          <Card style={styles.noResultsCard}>
-            <Text category='h6' style={styles.noResultsText}>
-              {results && results.message === 'No faces detected' ? 'No faces detected' : 'No clear faces detected'}
-            </Text>
-            <Text category='c1' style={styles.noResultsSubtext}>
-              {results && results.message
-                ? `${results.message}\nTry a front-facing photo in good lighting, filling more of the frame.`
-                : (results && results.faces && results.faces.length > 0 
-                    ? `Found ${results.faces.length} face(s) but none with sufficient confidence (≥90%).\nTry a front-facing photo in good lighting, filling more of the frame.`
-                    : 'Try a clearer photo with visible faces')}
-            </Text>
-            {(results && results.message !== 'No faces detected') && (
-              <TouchableOpacity
-                onPress={() => { setCurrentStep(2); analyzeFace(selectedImage, { overrideLowConfidence: true }); }}
-                style={{
-                  alignSelf: 'center',
-                  alignItems: 'center',
-                  marginTop: 10,
-                  backgroundColor: 'rgba(63,110,255,0.18)',
-                  borderColor: 'rgba(79,140,255,0.35)',
-                  borderWidth: 1,
-                  paddingHorizontal: 12,
-                  paddingVertical: 8,
-                  borderRadius: 12,
-                  marginLeft: 2,
-                }}
-              >
-                <Text style={{ color: '#E6EAF2', fontWeight: '600', fontSize: 12 }}>
-                  Analyze anyway (may be less accurate)
-                </Text>
-              </TouchableOpacity>
-            )}
-          </Card>
-        )}
+        ) : (null)}
         <Layout style={[styles.resultsActions, { maxWidth: MAIN_MAX_WIDTH, width: '100%', alignSelf: 'center' }]}> 
-          <Button
-            style={styles.shareButton}
-            onPress={shareResults}
-            accessoryLeft={ShareIcon}
-            status='primary'
-            appearance='filled'
-          >
-            Share Results
-          </Button>
+          {results && ((results.override_used && results.faces && results.faces.length > 0) || (results.faces && results.faces.filter(face => face.confidence >= 0.9).length > 0)) ? (
+            <Button
+              style={styles.shareButton}
+              onPress={shareResults}
+              accessoryLeft={ShareIcon}
+              status='primary'
+              appearance='filled'
+            >
+              Share Results
+            </Button>
+          ) : (results && results.message !== 'No faces detected') ? (
+            <Button
+              style={styles.shareButton}
+              onPress={() => { setCurrentStep(2); analyzeFace(selectedImage, { overrideLowConfidence: true }); }}
+              accessoryLeft={ShieldAlertIcon}
+              status='primary'
+              appearance='filled'
+            >
+              Analyze anyway
+            </Button>
+          ) : null}
           <Button
             style={styles.secondaryButton}
             onPress={() => setCurrentStep(1)}
