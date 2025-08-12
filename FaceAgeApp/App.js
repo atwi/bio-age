@@ -207,7 +207,7 @@ const AppHeader = React.memo(function AppHeader({ onShowInfo, user, onSignIn, on
           {user ? (
             <>
               <Text style={{ fontSize: 12, color: '#666', marginRight: 8 }}>
-                {user.displayName || user.email}
+                {user.displayName}
               </Text>
               <TopNavigationAction
                 icon={(props) => <Icon {...props} name='log-out-outline' />}
