@@ -1143,14 +1143,15 @@ async def analyze_face(request: Request, file: UploadFile = File(...)):
                 message="No face detected"
             )
         
-        # Filter faces with confidence >= 0.9
-        high_confidence_faces = [f for f in faces if f['confidence'] >= 0.95]
-        
+        # Two-tier threshold: prefer ultra-high confidence, otherwise allow high confidence with warning
+        ultra_conf_faces = [f for f in faces if f['confidence'] >= 0.99]
+        high_confidence_faces = ultra_conf_faces if len(ultra_conf_faces) > 0 else [f for f in faces if f['confidence'] >= 0.95]
+
         if not high_confidence_faces:
             return AnalyzeResponse(
                 success=False,
                 faces=[],
-                message="No high-confidence faces detected (≥95% confidence required)"
+                message="No faces detected (none ≥95% confidence)"
             )
         
         results: List[FaceResult] = []
@@ -1289,10 +1290,17 @@ async def analyze_face(request: Request, file: UploadFile = File(...)):
                 continue
         
         log_memory_usage("After analyze_face")
+        # Tailor message based on which threshold was used
+        used_ultra = len(ultra_conf_faces) > 0
+        msg = (
+            f"Found {len(results)} face(s) at ≥99% confidence"
+            if used_ultra
+            else f"Found {len(results)} face(s) at ≥95% confidence — results may be less reliable"
+        )
         return AnalyzeResponse(
             success=True,
             faces=results,
-            message=f"Found {len(results)} high-confidence face(s)"
+            message=msg
         )
         
     except Exception as e:

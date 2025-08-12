@@ -821,6 +821,12 @@ function AppContent() {
     }
   };
 
+  const [toast, setToast] = useState({ visible: false, text: '' });
+  const showToast = (text) => {
+    setToast({ visible: true, text });
+    setTimeout(() => setToast({ visible: false, text: '' }), 1800);
+  };
+
   const shareResults = async () => {
     if (!results || !results.faces || results.faces.length === 0) {
       Alert.alert('Error', 'No results to share');
@@ -828,6 +834,7 @@ function AppContent() {
     }
 
     const shareText = generateShareText();
+    const shareUrl = 'https://trueage.app';
 
     try {
       if (Platform.OS === 'ios' || Platform.OS === 'android') {
@@ -835,17 +842,15 @@ function AppContent() {
         await Share.share({
           message: shareText,
           title: 'My Age Analysis Results',
+          url: shareUrl,
         });
-      } else if (Platform.OS === 'web' && navigator.share) {
-        // Web Share API is available
-        await navigator.share({
-          title: 'My Age Analysis Results',
-          text: shareText,
-        });
-      } else if (Platform.OS === 'web' && navigator.clipboard) {
-        // Fallback to clipboard on web
-        await navigator.clipboard.writeText(shareText);
-        Alert.alert('Copied!', 'Results copied to clipboard. You can now paste them anywhere!');
+      } else if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.share) {
+        // Web Share API (Chrome/Edge mobile/desktop)
+        await navigator.share({ title: 'My Age Analysis Results', text: shareText, url: shareUrl });
+      } else if (Platform.OS === 'web') {
+        // Firefox/Safari desktop fallback → copy to clipboard and show toast
+        await copyToClipboard(shareText);
+        showToast('Results copied to clipboard');
       } else {
         // Final fallback - show alert with copy option
         Alert.alert('Share Results', shareText, [
@@ -858,7 +863,11 @@ function AppContent() {
       // Fallback to clipboard copy
       try {
         await copyToClipboard(shareText);
-        Alert.alert('Copied!', 'Results copied to clipboard since sharing failed.');
+        if (Platform.OS === 'web') {
+          showToast('Results copied to clipboard');
+        } else {
+          Alert.alert('Copied!', 'Results copied to clipboard since sharing failed.');
+        }
       } catch (clipboardError) {
         Alert.alert('Share Results', shareText, [
           { text: 'OK', style: 'default' }
@@ -877,6 +886,17 @@ function AppContent() {
     
     validFaces.forEach((face, index) => {
       shareText += `Face ${index + 1}:\n`;
+      // Compute Consensus as simple average of all shown models
+      const modelAges = [];
+      if (face.age_harvard !== null && face.age_harvard !== undefined) modelAges.push(Number(face.age_harvard));
+      if (face.age_harvard_calibrated !== null && face.age_harvard_calibrated !== undefined) modelAges.push(Number(face.age_harvard_calibrated));
+      if (face.age_deepface !== null && face.age_deepface !== undefined) modelAges.push(Number(face.age_deepface));
+      if (face.age_chatgpt !== null && face.age_chatgpt !== undefined) modelAges.push(Number(face.age_chatgpt));
+      if (modelAges.length > 0) {
+        const consensus = modelAges.reduce((a, b) => a + b, 0) / modelAges.length;
+        shareText += `⭐ Consensus: ${consensus.toFixed(1)} years\n`;
+      }
+      
       if (face.age_harvard !== null && face.age_harvard !== undefined) {
         shareText += `🎯 Harvard Model: ${face.age_harvard.toFixed(1)} years\n`;
       }
@@ -886,25 +906,46 @@ function AppContent() {
       if (face.age_deepface !== null && face.age_deepface !== undefined) {
         shareText += `🤖 DeepFace Model: ${face.age_deepface.toFixed(1)} years\n`;
       }
+      if (face.age_chatgpt !== null && face.age_chatgpt !== undefined) {
+        shareText += `💬 ChatGPT: ${Number(face.age_chatgpt).toFixed(1)} years\n`;
+      }
       shareText += `📊 Confidence: ${(face.confidence * 100).toFixed(1)}%\n\n`;
     });
 
-    shareText += 'Try the Bio Age Estimator app yourself! 📱';
+    shareText += 'Try TrueAge: https://trueage.app';
     return shareText;
   };
 
   const copyToClipboard = async (text) => {
     try {
       if (Platform.OS === 'web') {
-        await navigator.clipboard.writeText(text);
+        const canUseAsyncClipboard = typeof navigator !== 'undefined' && navigator.clipboard && (window.isSecureContext || location.hostname === 'localhost');
+        if (canUseAsyncClipboard) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          // Fallback: hidden textarea + execCommand('copy') works in Firefox/older browsers
+          const textarea = document.createElement('textarea');
+          textarea.value = text;
+          textarea.setAttribute('readonly', '');
+          textarea.style.position = 'fixed';
+          textarea.style.top = '-1000px';
+          textarea.style.opacity = '0';
+          document.body.appendChild(textarea);
+          textarea.focus();
+          textarea.select();
+          const ok = document.execCommand && document.execCommand('copy');
+          document.body.removeChild(textarea);
+          if (!ok) {
+            throw new Error('Fallback execCommand copy failed');
+          }
+        }
       } else {
         // For mobile, we could use expo-clipboard if needed
         console.log('Clipboard text:', text);
       }
-      Alert.alert('Copied!', 'Results copied to clipboard!');
     } catch (error) {
       console.error('Clipboard error:', error);
-      Alert.alert('Copy Failed', 'Unable to copy to clipboard');
+      throw error;
     }
   };
 
@@ -1364,16 +1405,16 @@ function AppContent() {
             const filteredFaces = results.faces.filter(face => face.confidence >= 0.9);
             const isSingleFace = filteredFaces.length === 1;
             
-            // Compute consensus (prefer calibrated Harvard if available, exclude ChatGPT)
-            const harvardPrimary = (face.age_harvard_calibrated ?? face.age_harvard);
-            const consensusAges = [];
-            if (harvardPrimary !== null && harvardPrimary !== undefined) consensusAges.push(harvardPrimary);
-            if (face.age_deepface !== null && face.age_deepface !== undefined) consensusAges.push(face.age_deepface);
+            // Compute consensus = average of all models that are shown
+            const shownModelValues = [];
+            if (face.age_harvard !== null && face.age_harvard !== undefined) shownModelValues.push(face.age_harvard);
+            if (face.age_harvard_calibrated !== null && face.age_harvard_calibrated !== undefined) shownModelValues.push(face.age_harvard_calibrated);
+            if (face.age_deepface !== null && face.age_deepface !== undefined) shownModelValues.push(face.age_deepface);
+            if (face.age_chatgpt !== null && face.age_chatgpt !== undefined) shownModelValues.push(face.age_chatgpt);
             let consensus = null;
-            if (consensusAges.length > 0) {
-              const sorted = [...consensusAges].sort((a, b) => a - b);
-              const mid = Math.floor(sorted.length / 2);
-              consensus = (sorted.length % 2 !== 0) ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+            if (shownModelValues.length > 0) {
+              const sum = shownModelValues.reduce((acc, v) => acc + v, 0);
+              consensus = sum / shownModelValues.length;
             }
             
             return (
@@ -1455,7 +1496,7 @@ function AppContent() {
                       <Text style={{ fontSize: 13, fontWeight: '700', color: '#E6EAF2', letterSpacing: 0.2 }}>AGE ESTIMATES</Text>
                       {isSingleFace && consensus !== null && (
                         <View style={styles.consensusPill}>
-                          <Text style={styles.consensusPillText}>Consensus {Math.round(consensus)} yrs</Text>
+                          <Text style={styles.consensusPillText}>Average {Math.round(consensus)} yrs</Text>
                         </View>
                       )}
                     </Layout>
@@ -1525,19 +1566,6 @@ function AppContent() {
                   }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
                       <Text style={{ fontSize: 13, fontWeight: '700', color: '#E6EAF2', letterSpacing: 0.2, textAlign: 'left' }}>AGE FACTORS</Text>
-                      {!user && (
-                        <View style={{
-                          backgroundColor: '#FF9800',
-                          borderRadius: 8,
-                          paddingHorizontal: 6,
-                          paddingVertical: 2,
-                          marginLeft: 8,
-                        }}>
-                          <Text style={{ fontSize: 9, color: '#fff', fontWeight: 'bold' }}>
-                            PREMIUM
-                          </Text>
-                        </View>
-                      )}
                     </View>
                     
                     {/* Blurred content when not signed in AND auth is required */}
@@ -1717,6 +1745,13 @@ function AppContent() {
       </Layout>
       {renderInfoModal()}
       {renderContentModal()}
+      {Platform.OS === 'web' && toast.visible && (
+        <View style={styles.toastOverlay}>
+          <GlassPanel style={styles.toastCard}>
+            <Text style={styles.toastText}>{toast.text}</Text>
+          </GlassPanel>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -2616,6 +2651,31 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0, 0, 0, 0.7)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
+  },
+  toastOverlay: {
+    position: 'fixed',
+    left: 0,
+    right: 0,
+    bottom: 24,
+    display: 'flex',
+    alignItems: 'center',
+    zIndex: 9999,
+    pointerEvents: 'none',
+  },
+  toastCard: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: 'rgba(28,34,44,0.55)',
+    boxShadow: '0 6px 24px rgba(0,0,0,0.25)',
+  },
+  toastText: {
+    color: '#E6EAF2',
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 0.2,
   },
 });
 
