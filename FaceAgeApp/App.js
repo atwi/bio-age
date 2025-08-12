@@ -691,7 +691,7 @@ function AppContent() {
     };
   }, [showWebCamera, apiHealth?.settings?.enable_face_fill]);
 
-  const analyzeFace = async (imageToAnalyze = selectedImage) => {
+  const analyzeFace = async (imageToAnalyze = selectedImage, { overrideLowConfidence = false } = {}) => {
     if (!imageToAnalyze) return;
 
     setLoading(true);
@@ -713,15 +713,16 @@ function AppContent() {
         formData.append('file', fileInfo);
       }
 
-      console.log('Sending request to:', `${API_BASE_URL}/analyze-face`);
+      console.log('Sending request to:', `${API_BASE_URL}/analyze-face${overrideLowConfidence ? '?allow_low_confidence=true' : ''}`);
 
       // Create AbortController for timeout
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes timeout
       
-      const response = await fetch(`${API_BASE_URL}/analyze-face`, {
+      const response = await fetch(`${API_BASE_URL}/analyze-face${overrideLowConfidence ? '?allow_low_confidence=true' : ''}`, {
         method: 'POST',
         body: formData,
+        headers: overrideLowConfidence ? { 'x-allow-low-confidence': 'true' } : undefined,
         signal: controller.signal,
       });
       
@@ -888,7 +889,7 @@ function AppContent() {
   const generateShareText = () => {
     if (!results || !results.faces) return '';
     
-    const validFaces = results.faces.filter(face => face.confidence >= 0.9);
+    const validFaces = results.override_used ? results.faces : results.faces.filter(face => face.confidence >= 0.9);
     if (validFaces.length === 0) return results && results.message ? results.message : 'No clear faces detected in the analysis.';
 
     let shareText = '🎯 My Age Analysis Results:\n\n';
@@ -1401,9 +1402,9 @@ function AppContent() {
             Age estimation complete
           </Text>
         </Layout>
-        {results && results.faces && results.faces.filter(face => face.confidence >= 0.9).length > 0 ? (
-          results.faces.filter(face => face.confidence >= 0.9).map((face, index) => {
-            const filteredFaces = results.faces.filter(face => face.confidence >= 0.9);
+        {results && results.faces && ((results.override_used && results.faces.length > 0) || results.faces.filter(face => face.confidence >= 0.9).length > 0) ? (
+          (results.override_used ? results.faces : results.faces.filter(face => face.confidence >= 0.9)).map((face, index) => {
+            const filteredFaces = results.override_used ? results.faces : results.faces.filter(face => face.confidence >= 0.9);
             const isSingleFace = filteredFaces.length === 1;
             
             // Compute consensus = average of all models that are shown
@@ -1688,7 +1689,7 @@ function AppContent() {
         ) : (
           <Card style={styles.noResultsCard}>
             <Text category='h6' style={styles.noResultsText}>
-              No clear faces detected
+              {results && results.message === 'No faces detected' ? 'No faces detected' : 'No clear faces detected'}
             </Text>
             <Text category='c1' style={styles.noResultsSubtext}>
               {results && results.message
@@ -1697,6 +1698,27 @@ function AppContent() {
                     ? `Found ${results.faces.length} face(s) but none with sufficient confidence (≥90%).\nTry a front-facing photo in good lighting, filling more of the frame.`
                     : 'Try a clearer photo with visible faces')}
             </Text>
+            {(results && results.message !== 'No faces detected') && (
+              <TouchableOpacity
+                onPress={() => { setCurrentStep(2); analyzeFace(selectedImage, { overrideLowConfidence: true }); }}
+                style={{
+                  alignSelf: 'center',
+                  alignItems: 'center',
+                  marginTop: 10,
+                  backgroundColor: 'rgba(63,110,255,0.18)',
+                  borderColor: 'rgba(79,140,255,0.35)',
+                  borderWidth: 1,
+                  paddingHorizontal: 12,
+                  paddingVertical: 8,
+                  borderRadius: 12,
+                  marginLeft: 2,
+                }}
+              >
+                <Text style={{ color: '#E6EAF2', fontWeight: '600', fontSize: 12 }}>
+                  Analyze anyway (may be less accurate)
+                </Text>
+              </TouchableOpacity>
+            )}
           </Card>
         )}
         <Layout style={[styles.resultsActions, { maxWidth: MAIN_MAX_WIDTH, width: '100%', alignSelf: 'center' }]}> 

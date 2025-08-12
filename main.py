@@ -115,6 +115,7 @@ class AnalyzeResponse(BaseModel):
     success: bool
     faces: List[FaceResult]
     message: str
+    override_used: bool = False
 
 def background_load_models():
     """Load models in background thread - non-blocking"""
@@ -1140,14 +1141,33 @@ async def analyze_face(request: Request, file: UploadFile = File(...)):
             return AnalyzeResponse(
                 success=False,
                 faces=[],
-                message="No face detected"
+                message="No faces detected",
+                override_used=False
             )
         
+        # Optional override to allow low-confidence analysis
+        try:
+            allow_low_conf_qp = request.query_params.get('allow_low_confidence') or request.query_params.get('override')
+        except Exception:
+            allow_low_conf_qp = None
+        allow_low_conf_header = request.headers.get('x-allow-low-confidence') or request.headers.get('x-override-low-confidence')
+        def _to_bool(v: Any) -> bool:
+            if v is None:
+                return False
+            s = str(v).strip().lower()
+            return s in ("1", "true", "yes", "on")
+        allow_low_confidence = _to_bool(allow_low_conf_qp) or _to_bool(allow_low_conf_header)
+
         # Two-tier threshold: prefer ultra-high confidence, otherwise allow high confidence with warning
         ultra_conf_faces = [f for f in faces if f['confidence'] >= 0.99]
-        high_confidence_faces = ultra_conf_faces if len(ultra_conf_faces) > 0 else [f for f in faces if f['confidence'] >= 0.95]
+        selected_faces = []
+        if allow_low_confidence:
+            selected_faces = list(faces)
+        else:
+            high_confidence_faces = ultra_conf_faces if len(ultra_conf_faces) > 0 else [f for f in faces if f['confidence'] >= 0.95]
+            selected_faces = high_confidence_faces
 
-        if not high_confidence_faces:
+        if not selected_faces:
             # Report best detected confidence if any faces were found
             try:
                 best_conf = max([f.get('confidence', 0.0) for f in faces]) if faces else 0.0
@@ -1156,12 +1176,13 @@ async def analyze_face(request: Request, file: UploadFile = File(...)):
             return AnalyzeResponse(
                 success=False,
                 faces=[],
-                message=f"No clear faces detected. Best detection confidence was {best_conf * 100:.1f}% (need ≥95%)."
+                message=f"No clear faces detected. Best detection confidence was {best_conf * 100:.1f}% (need ≥95%).",
+                override_used=False
             )
         
         results: List[FaceResult] = []
         
-        for i, face in enumerate(high_confidence_faces):
+        for i, face in enumerate(selected_faces):
             logger.info(f"--- Processing face {i} ---")
             try:
                 x, y, w, h = face['box']
@@ -1296,16 +1317,27 @@ async def analyze_face(request: Request, file: UploadFile = File(...)):
         
         log_memory_usage("After analyze_face")
         # Tailor message based on which threshold was used
-        used_ultra = len(ultra_conf_faces) > 0
-        msg = (
-            f"Found {len(results)} face(s) at ≥99% confidence"
-            if used_ultra
-            else f"Found {len(results)} face(s) at ≥95% confidence — results may be less reliable"
-        )
+        used_ultra = (not allow_low_confidence) and (len(ultra_conf_faces) > 0)
+        if allow_low_confidence:
+            try:
+                confs = [f.get('confidence', 0.0) for f in selected_faces]
+                cmin = min(confs) if confs else 0.0
+                cmax = max(confs) if confs else 0.0
+                rng = f"{cmin*100:.1f}–{cmax*100:.1f}%"
+            except Exception:
+                rng = "below standard threshold"
+            msg = f"Override enabled: analyzed {len(results)} face(s) below standard threshold — results may be less reliable (confidence {rng})."
+        else:
+            msg = (
+                f"Found {len(results)} face(s) at ≥99% confidence"
+                if used_ultra
+                else f"Found {len(results)} face(s) at ≥95% confidence — results may be less reliable"
+            )
         return AnalyzeResponse(
             success=True,
             faces=results,
-            message=msg
+            message=msg,
+            override_used=bool(allow_low_confidence)
         )
         
     except Exception as e:
