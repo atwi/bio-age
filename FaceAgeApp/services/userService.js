@@ -28,6 +28,11 @@ const sanitizeObject = (obj) => {
 
 // Save analysis result to user's history
 export const saveAnalysisResult = async (userId, analysisData, imageBlob = null) => {
+  if (!userId || !analysisData) {
+    console.warn('saveAnalysisResult: Missing required parameters');
+    return { success: false, error: 'Missing required parameters' };
+  }
+
   try {
     const userRef = doc(db, 'users', userId);
     
@@ -37,12 +42,17 @@ export const saveAnalysisResult = async (userId, analysisData, imageBlob = null)
     let imageUrl = null;
     let imagePath = null;
     
-    // Upload image to Firebase Storage if provided
-    if (imageBlob) {
-      imagePath = `user_photos/${userId}/${analysisId}.jpg`;
-      const imageRef = ref(storage, imagePath);
-      const snapshot = await uploadBytes(imageRef, imageBlob);
-      imageUrl = await getDownloadURL(snapshot.ref);
+    // Upload image to Firebase Storage if provided and storage is available
+    if (imageBlob && storage) {
+      try {
+        imagePath = `user_photos/${userId}/${analysisId}.jpg`;
+        const imageRef = ref(storage, imagePath);
+        const snapshot = await uploadBytes(imageRef, imageBlob);
+        imageUrl = await getDownloadURL(snapshot.ref);
+      } catch (uploadError) {
+        console.warn('Non-fatal: failed to upload image:', uploadError?.message || uploadError);
+        // Continue without image upload
+      }
     }
     
     const timestampMs = Date.now();
@@ -76,6 +86,7 @@ export const saveAnalysisResult = async (userId, analysisData, imageBlob = null)
       ...analysisDetails,
       createdAt: serverTimestamp(),
     });
+    
     try {
       await setDoc(analysisRef, detailPayload);
     } catch (e) {
@@ -89,6 +100,7 @@ export const saveAnalysisResult = async (userId, analysisData, imageBlob = null)
       lastAnalysisAt: serverTimestamp(),
       lastAnalysisId: analysisId,
     });
+    
     try {
       await setDoc(
         userRef,

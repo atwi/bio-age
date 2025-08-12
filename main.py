@@ -1167,6 +1167,18 @@ async def analyze_face(request: Request, file: UploadFile = File(...)):
             high_confidence_faces = ultra_conf_faces if len(ultra_conf_faces) > 0 else [f for f in faces if f['confidence'] >= 0.95]
             selected_faces = high_confidence_faces
 
+        # Filter by minimum face size to exclude tiny background faces
+        MIN_FACE_SIZE = 80  # Minimum width/height in pixels
+        size_filtered_faces = []
+        for face in selected_faces:
+            x, y, w, h = face['box']
+            if w >= MIN_FACE_SIZE and h >= MIN_FACE_SIZE:
+                size_filtered_faces.append(face)
+            else:
+                logger.info(f"Filtered out small face: {w}x{h} pixels (min: {MIN_FACE_SIZE})")
+        
+        selected_faces = size_filtered_faces
+
         if not selected_faces:
             # Report best detected confidence if any faces were found
             try:
@@ -1176,7 +1188,7 @@ async def analyze_face(request: Request, file: UploadFile = File(...)):
             return AnalyzeResponse(
                 success=False,
                 faces=[],
-                message=f"No clear faces detected. Best detection confidence was {best_conf * 100:.1f}% (need ≥95%).",
+                message=f"No clear faces detected. Best detection confidence was {best_conf * 100:.1f}% (need ≥95%) and minimum size {MIN_FACE_SIZE}px.",
                 override_used=False
             )
         

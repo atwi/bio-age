@@ -108,37 +108,43 @@ export const signOut = async () => {
 
 // Create or update user document in Firestore
 const createOrUpdateUserDocument = async (user) => {
-  if (!user) return;
+  if (!user || !user.uid) return;
   
-  const userRef = doc(db, 'users', user.uid);
-  const userSnap = await getDoc(userRef);
-  
-  if (!userSnap.exists()) {
-    // Create new user document
-    try {
-      await setDoc(userRef, {
+  try {
+    const userRef = doc(db, 'users', user.uid);
+    const userSnap = await getDoc(userRef);
+    
+    if (!userSnap.exists()) {
+      // Create new user document
+      const userData = {
         uid: user.uid,
-        email: user.email,
-        displayName: user.displayName,
-        photoURL: user.photoURL,
+        email: user.email || null,
+        displayName: user.displayName || null,
+        photoURL: user.photoURL || null,
         createdAt: serverTimestamp(),
         lastLoginAt: serverTimestamp(),
         subscription: 'free',
         analysisCount: 0,
         analyses: []
+      };
+      
+      // Remove undefined values to prevent Firestore errors
+      Object.keys(userData).forEach(key => {
+        if (userData[key] === undefined) {
+          delete userData[key];
+        }
       });
-    } catch (error) {
-      console.error('Error creating user document:', error);
-    }
-  } else {
-    // Update last login time
-    try {
+      
+      await setDoc(userRef, userData);
+    } else {
+      // Update last login time
       await setDoc(userRef, {
         lastLoginAt: serverTimestamp()
       }, { merge: true });
-    } catch (error) {
-      console.error('Error updating user document:', error);
     }
+  } catch (error) {
+    console.error('Error creating/updating user document:', error);
+    // Don't throw - this is non-critical for app functionality
   }
 };
 

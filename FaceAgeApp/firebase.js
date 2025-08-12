@@ -15,17 +15,47 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase
-const app = initializeApp(firebaseConfig);
+let app;
+try {
+  app = initializeApp(firebaseConfig);
+} catch (error) {
+  console.error('Firebase initialization error:', error);
+  // Create a minimal app for basic functionality
+  app = initializeApp({
+    apiKey: firebaseConfig.apiKey,
+    authDomain: firebaseConfig.authDomain,
+    projectId: firebaseConfig.projectId,
+  });
+}
 
 // Initialize Firebase services
 export const auth = getAuth(app);
-export const db = initializeFirestore(app, {
-  ignoreUndefinedProperties: true,
-  // Prefer robust transport to avoid Write/channel stream issues
-  experimentalForceLongPolling: true,
-  useFetchStreams: false,
-});
-export const storage = getStorage(app);
+
+let db;
+try {
+  db = initializeFirestore(app, {
+    ignoreUndefinedProperties: true,
+    // Use more robust connection settings to avoid Write/channel stream issues
+    experimentalForceLongPolling: true,
+    useFetchStreams: false,
+    // Add connection timeout and retry settings
+    cacheSizeBytes: 50 * 1024 * 1024, // 50MB cache
+  });
+} catch (error) {
+  console.error('Firestore initialization error:', error);
+  // Fallback to basic Firestore initialization
+  db = getFirestore(app);
+}
+export { db };
+
+let storage;
+try {
+  storage = getStorage(app);
+} catch (error) {
+  console.error('Firebase Storage initialization error:', error);
+  storage = null;
+}
+export { storage };
 
 // Auth providers
 export const googleProvider = new GoogleAuthProvider();
@@ -42,5 +72,15 @@ appleProvider.setCustomParameters({
 
 // Reduce console noise from Firestore transport retries
 try { setLogLevel('error'); } catch {}
+
+// Add error handling for Firestore connection issues
+if (typeof window !== 'undefined') {
+  // Handle potential Firestore connection errors in web environment
+  window.addEventListener('error', (event) => {
+    if (event.error && event.error.message && event.error.message.includes('Firestore')) {
+      console.warn('Firestore connection issue detected, this is usually non-critical');
+    }
+  });
+}
 
 export default app; 
