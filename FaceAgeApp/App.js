@@ -25,8 +25,8 @@ import { Asset } from 'expo-asset';
 
 // Firebase imports
 import { auth, db, storage, googleProvider, appleProvider } from './firebase';
-import { signInWithGoogle, signInWithApple, signOut, createOrUpdateUserDocument, onAuthStateChange, getCurrentUser } from './services/authService';
-import { saveAnalysisResult, getUserAnalysisHistory, getUserProfile, updateUserProfile, deleteAnalysis } from './services/userService';
+import { signInWithGoogle, signInWithApple, signOut, createOrUpdateUserDocument, onAuthStateChange, getCurrentUser, sendMagicLink, isMagicLink, completeMagicLinkSignIn } from './services/authService';
+import { getUserAnalysisHistory, getUserProfile, updateUserProfile, deleteAnalysis } from './services/userService';
 
 // UI Kitten imports
 import * as eva from '@eva-design/eva';
@@ -311,6 +311,10 @@ function AppContent() {
   // Firebase auth state
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const emailInputRef = useRef(null);
+  const [emailForLink, setEmailForLink] = useState('');
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
 
   // Request permissions on mount
   useEffect(() => {
@@ -338,6 +342,28 @@ function AppContent() {
     });
 
     return () => unsubscribe();
+  }, []);
+
+  // Complete email link sign-in if opened via magic link (web)
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      try {
+        const href = window.location.href;
+        if (isMagicLink(href)) {
+          // Attempt to complete with stored email; UI will ask if missing
+          completeMagicLinkSignIn(href)
+            .then(() => {
+              // Optionally clean up URL params
+              if (window.history && window.location) {
+                const url = new URL(window.location.href);
+                url.search = '';
+                window.history.replaceState({}, document.title, url.toString());
+              }
+            })
+            .catch(() => {});
+        }
+      } catch (e) {}
+    }
   }, []);
 
   // Start scanning animation when in step 2
@@ -746,21 +772,6 @@ function AppContent() {
           });
         }
         setResults(data);
-        
-        // Save results to Firebase if user is signed in
-        if (user && data.faces && data.faces.length > 0) {
-          try {
-            await saveAnalysisResult(user.uid, {
-              timestamp: new Date(),
-              faces: data.faces,
-              originalImage: selectedImage?.uri,
-              analysisId: Date.now().toString()
-            });
-          } catch (error) {
-            console.error('Failed to save analysis result:', error);
-            // Don't show error to user, just log it
-          }
-        }
         
         // Add minimum delay to show scanning animation (reduced for Railway)
         await new Promise(resolve => setTimeout(resolve, 2000));
@@ -1644,7 +1655,7 @@ function AppContent() {
                         <View style={{
                           alignItems: 'center',
                           padding: 20,
-                          maxWidth: 200,
+                          maxWidth: 260,
                         }}>
                           <Text style={{
                             fontSize: 16,
@@ -1653,40 +1664,141 @@ function AppContent() {
                             textAlign: 'center',
                             marginBottom: 8,
                           }}>
-                            🔒 Detailed Analysis
+                            🔒 Free account required
                           </Text>
                           <Text style={{
                             fontSize: 13,
                             color: '#9AA3AF',
                             textAlign: 'center',
-                            marginBottom: 20,
+                            marginBottom: 16,
                             lineHeight: 18,
                           }}>
-                            Sign up to see detailed breakdown of skin texture, hair, and facial features
+                            Sign up free to see what factors make you look older and younger. It's completely free.
                           </Text>
+                          {/* Email row */}
+                          <View style={{ width: '100%', gap: 8, marginBottom: 12 }}>
+                            <input
+                              type="email"
+                              placeholder="you@domain.com"
+                              value={emailForLink}
+                              onChange={(e) => setEmailForLink(e.target.value)}
+                              ref={emailInputRef}
+                              style={{
+                                width: '100%',
+                                padding: 12,
+                                borderRadius: 12,
+                                border: '1px solid rgba(255,255,255,0.08)',
+                                background: 'rgba(21,25,34,0.8)',
+                                color: '#E6EAF2',
+                                outline: 'none',
+                                boxSizing: 'border-box',
+                              }}
+                            />
+                            <TouchableOpacity
+                              disabled={emailSending}
+                              style={{
+                                width: '100%',
+                                backgroundColor: '#4F8CFF',
+                                opacity: emailSending ? 0.7 : 1,
+                                paddingVertical: 12,
+                                paddingHorizontal: 16,
+                                borderRadius: 12,
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexDirection: 'row',
+                              }}
+                              onPress={async () => {
+                                setEmailSending(true);
+                                const res = await sendMagicLink(emailForLink.trim());
+                                setEmailSending(false);
+                                setEmailSent(!!res.success);
+                                if (!res.success) {
+                                  Alert.alert('Error', res.error || 'Could not send link');
+                                } else {
+                                  Alert.alert('Check your email', 'We sent you a secure sign-in link.');
+                                }
+                              }}
+                            >
+                              {/* Email icon */}
+                              {Platform.OS !== 'web' ? null : null}
+                              <Ionicons name="mail-outline" size={16} color="#fff" style={{ marginRight: 8 }} />
+                              <Text style={{ color: '#fff', fontWeight: '600', fontSize: 14, textAlign: 'center' }}>
+                                {emailSent ? 'Link sent — check email' : (emailSending ? 'Sending…' : 'Continue with email')}
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
                           <TouchableOpacity
                             style={{
+                              width: '100%',
                               backgroundColor: '#4F8CFF',
                               paddingVertical: 12,
-                              paddingHorizontal: 24,
-                              borderRadius: 25,
-                              shadowColor: '#4F8CFF',
-                              shadowOffset: { width: 0, height: 4 },
-                              shadowOpacity: 0.3,
-                              shadowRadius: 8,
-                              elevation: 4,
+                              paddingHorizontal: 16,
+                              borderRadius: 12,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexDirection: 'row',
+                              gap: 8,
                             }}
                             onPress={() => handleSignIn('google')}
                           >
+                            <View style={{
+                              width: 18,
+                              height: 18,
+                              borderRadius: 9,
+                              backgroundColor: '#fff',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}>
+                              <Text style={{ color: '#4285F4', fontWeight: '700', fontSize: 12 }}>G</Text>
+                            </View>
                             <Text style={{
                               color: '#fff',
                               fontSize: 14,
                               fontWeight: '600',
                               textAlign: 'center',
                             }}>
-                              Sign Up to View
+                              Continue with Google
                             </Text>
                           </TouchableOpacity>
+                          {/* Login link */}
+                          <View style={{ marginTop: 10, alignItems: 'center', width: '100%' }}>
+                            <Text style={{ color: '#9AA3AF', fontSize: 12 }}>
+                              Already have an account?{' '}
+                              <Text
+                                onPress={async () => {
+                                  const email = (emailForLink || '').trim();
+                                  if (Platform.OS === 'web') {
+                                    if (email.length > 0) {
+                                      try {
+                                        setEmailSending(true);
+                                        const res = await sendMagicLink(email);
+                                        setEmailSending(false);
+                                        setEmailSent(!!res.success);
+                                        if (!res.success) {
+                                          Alert.alert('Error', res.error || 'Could not send link');
+                                        } else {
+                                          Alert.alert('Check your email', 'We sent you a secure sign-in link.');
+                                        }
+                                      } catch (e) {
+                                        setEmailSending(false);
+                                        Alert.alert('Error', 'Could not send link');
+                                      }
+                                    } else {
+                                      // Focus the email field for convenience
+                                      try { emailInputRef?.current?.focus && emailInputRef.current.focus(); } catch {}
+                                      try { showToast && showToast('Enter your email to get a login link.'); } catch {}
+                                    }
+                                  } else {
+                                    // On native, fall back to Google sign-in
+                                    handleSignIn('google');
+                                  }
+                                }}
+                                style={{ color: '#4F8CFF', fontSize: 12, fontWeight: '600', textDecorationLine: 'underline' }}
+                              >
+                                Log in
+                              </Text>
+                            </Text>
+                          </View>
                         </View>
                       </View>
                     )}

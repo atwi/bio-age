@@ -2,10 +2,15 @@ import {
   signInWithPopup, 
   signOut as firebaseSignOut,
   onAuthStateChanged,
-  User
+  sendSignInLinkToEmail,
+  isSignInWithEmailLink,
+  signInWithEmailLink,
 } from 'firebase/auth';
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, googleProvider, appleProvider, db } from '../firebase';
+
+// Storage key for pending email link sign-in
+const EMAIL_STORAGE_KEY = 'trueageEmailForSignIn';
 
 // Sign in with Google
 export const signInWithGoogle = async () => {
@@ -35,6 +40,57 @@ export const signInWithApple = async () => {
     return { success: true, user };
   } catch (error) {
     console.error('Apple sign in error:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+// Send passwordless sign-in link to email (web)
+export const sendMagicLink = async (email) => {
+  try {
+    if (!email || typeof email !== 'string') {
+      throw new Error('Please enter a valid email');
+    }
+    const actionCodeSettings = {
+      url: (typeof window !== 'undefined' ? window.location.origin : 'https://trueage.app'),
+      handleCodeInApp: true,
+    };
+    await sendSignInLinkToEmail(auth, email, actionCodeSettings);
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(EMAIL_STORAGE_KEY, email);
+    }
+    return { success: true };
+  } catch (error) {
+    console.error('sendMagicLink error:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+export const isMagicLink = (url) => {
+  try {
+    return isSignInWithEmailLink(auth, url);
+  } catch (e) {
+    return false;
+  }
+};
+
+export const completeMagicLinkSignIn = async (url, emailFromUser) => {
+  try {
+    let email = emailFromUser;
+    if (!email && typeof window !== 'undefined' && window.localStorage) {
+      email = window.localStorage.getItem(EMAIL_STORAGE_KEY) || '';
+    }
+    if (!email) {
+      throw new Error('Email required to complete sign-in');
+    }
+    const result = await signInWithEmailLink(auth, email, url);
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.removeItem(EMAIL_STORAGE_KEY);
+    }
+    const user = result.user;
+    await createOrUpdateUserDocument(user);
+    return { success: true, user };
+  } catch (error) {
+    console.error('completeMagicLinkSignIn error:', error);
     return { success: false, error: error.message };
   }
 };

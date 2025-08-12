@@ -10,6 +10,22 @@ import {
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
 
+const sanitizeObject = (obj) => {
+  if (!obj || typeof obj !== 'object') return obj;
+  const out = {};
+  Object.keys(obj).forEach((k) => {
+    const v = obj[k];
+    if (v === undefined) return; // drop undefined
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      const nested = sanitizeObject(v);
+      if (nested !== undefined) out[k] = nested;
+    } else {
+      out[k] = v;
+    }
+  });
+  return out;
+};
+
 // Save analysis result to user's history
 export const saveAnalysisResult = async (userId, analysisData, imageBlob = null) => {
   try {
@@ -19,35 +35,69 @@ export const saveAnalysisResult = async (userId, analysisData, imageBlob = null)
     const analysisId = `analysis_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
     let imageUrl = null;
+    let imagePath = null;
     
     // Upload image to Firebase Storage if provided
     if (imageBlob) {
-      const imageRef = ref(storage, `user_photos/${userId}/${analysisId}.jpg`);
+      imagePath = `user_photos/${userId}/${analysisId}.jpg`;
+      const imageRef = ref(storage, imagePath);
       const snapshot = await uploadBytes(imageRef, imageBlob);
       imageUrl = await getDownloadURL(snapshot.ref);
     }
     
-    // Prepare analysis document
-    const analysisDoc = {
+    const timestampMs = Date.now();
+
+    // Prepare a compact summary to keep user doc small
+    const analysisSummary = {
       id: analysisId,
-      timestamp: serverTimestamp(),
+      timestampMs,
       imageUrl: imageUrl,
       results: {
-        harvard: analysisData.age_harvard || null,
-        deepface: analysisData.age_deepface || null,
-        chatgpt: analysisData.age_chatgpt || null,
-        confidence: analysisData.confidence || null
+        harvard: analysisData?.age_harvard ?? null,
+        harvard_calibrated: analysisData?.age_harvard_calibrated ?? null,
+        deepface: analysisData?.age_deepface ?? null,
+        chatgpt: analysisData?.age_chatgpt ?? null,
+        confidence: analysisData?.confidence ?? null,
       },
-      factors: analysisData.chatgpt_factors || null,
-      faceCropBase64: analysisData.face_crop_base64 || null
     };
-    
-    // Add to user's analyses array and increment count
-    await updateDoc(userRef, {
-      analyses: arrayUnion(analysisDoc),
-      analysisCount: increment(1),
-      lastAnalysisAt: serverTimestamp()
+
+    // Prepare detailed doc (no large base64 blobs)
+    const analysisDetails = sanitizeObject({
+      ...analysisSummary,
+      factors: analysisData?.chatgpt_factors ?? null,
+      // Store storage path instead of embedding large base64
+      imagePath: imagePath,
+      // Do NOT store faceCropBase64 to avoid exceeding Firestore doc limits
     });
+
+    // Write detailed doc to subcollection
+    const analysisRef = doc(db, 'users', userId, 'analyses', analysisId);
+    const detailPayload = sanitizeObject({
+      ...analysisDetails,
+      createdAt: serverTimestamp(),
+    });
+    try {
+      await setDoc(analysisRef, detailPayload);
+    } catch (e) {
+      console.warn('Non-fatal: failed to write analysis detail doc:', e?.message || e);
+    }
+
+    // Create/merge user doc with compact summary and counters (merge ensures doc is created if missing)
+    const userPayload = sanitizeObject({
+      analyses: arrayUnion(sanitizeObject(analysisSummary)),
+      analysisCount: increment(1),
+      lastAnalysisAt: serverTimestamp(),
+      lastAnalysisId: analysisId,
+    });
+    try {
+      await setDoc(
+        userRef,
+        userPayload,
+        { merge: true }
+      );
+    } catch (e) {
+      console.warn('Non-fatal: failed to write user summary doc:', e?.message || e);
+    }
     
     return { success: true, analysisId };
   } catch (error) {
@@ -71,7 +121,7 @@ export const getUserAnalysisHistory = async (userId, limit = 20) => {
     
     // Sort by timestamp (newest first) and limit results
     const sortedAnalyses = analyses
-      .sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0))
+      .sort((a, b) => (b.timestamp?.seconds || b.timestampMs || 0) - (a.timestamp?.seconds || a.timestampMs || 0))
       .slice(0, limit);
     
     return { success: true, analyses: sortedAnalyses };

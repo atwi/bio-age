@@ -1,7 +1,7 @@
 // Use modular Firebase imports for better tree shaking
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, OAuthProvider } from 'firebase/auth';
-import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
+import { getFirestore, initializeFirestore, connectFirestoreEmulator, setLogLevel } from 'firebase/firestore';
 import { getStorage, connectStorageEmulator } from 'firebase/storage';
 
 // Your Firebase config - Replace with your actual config from Firebase Console
@@ -19,7 +19,12 @@ const app = initializeApp(firebaseConfig);
 
 // Initialize Firebase services
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+export const db = initializeFirestore(app, {
+  ignoreUndefinedProperties: true,
+  // Prefer robust transport to avoid Write/channel stream issues
+  experimentalForceLongPolling: true,
+  useFetchStreams: false,
+});
 export const storage = getStorage(app);
 
 // Auth providers
@@ -34,5 +39,8 @@ googleProvider.setCustomParameters({
 appleProvider.setCustomParameters({
   locale: 'en'
 });
+
+// Reduce console noise from Firestore transport retries
+try { setLogLevel('error'); } catch {}
 
 export default app; 
