@@ -889,7 +889,7 @@ function AppContent() {
     if (!results || !results.faces) return '';
     
     const validFaces = results.faces.filter(face => face.confidence >= 0.9);
-    if (validFaces.length === 0) return 'No clear faces detected in the analysis.';
+    if (validFaces.length === 0) return results && results.message ? results.message : 'No clear faces detected in the analysis.';
 
     let shareText = '🎯 My Age Analysis Results:\n\n';
     
@@ -905,23 +905,15 @@ function AppContent() {
         const consensus = modelAges.reduce((a, b) => a + b, 0) / modelAges.length;
         shareText += `⭐ Consensus: ${consensus.toFixed(1)} years\n`;
       }
-      
-      if (face.age_harvard !== null && face.age_harvard !== undefined) {
-        shareText += `🎯 Harvard Model: ${face.age_harvard.toFixed(1)} years\n`;
-      }
-      if (face.age_harvard_calibrated !== null && face.age_harvard_calibrated !== undefined) {
-        shareText += `🎯 Harvard (calibrated): ${Number(face.age_harvard_calibrated).toFixed(1)} years\n`;
-      }
-      if (face.age_deepface !== null && face.age_deepface !== undefined) {
-        shareText += `🤖 DeepFace Model: ${face.age_deepface.toFixed(1)} years\n`;
-      }
-      if (face.age_chatgpt !== null && face.age_chatgpt !== undefined) {
-        shareText += `💬 ChatGPT: ${Number(face.age_chatgpt).toFixed(1)} years\n`;
-      }
-      shareText += `📊 Confidence: ${(face.confidence * 100).toFixed(1)}%\n\n`;
+      if (face.age_harvard !== null && face.age_harvard !== undefined) shareText += `Harvard: ${Number(face.age_harvard).toFixed(1)} years\n`;
+      if (face.age_harvard_calibrated !== null && face.age_harvard_calibrated !== undefined) shareText += `Harvard (calibrated): ${Number(face.age_harvard_calibrated).toFixed(1)} years\n`;
+      if (face.age_deepface !== null && face.age_deepface !== undefined) shareText += `DeepFace: ${Number(face.age_deepface).toFixed(1)} years\n`;
+      if (face.age_chatgpt !== null && face.age_chatgpt !== undefined) shareText += `ChatGPT: ${Number(face.age_chatgpt).toFixed(1)} years\n`;
+      if (face.confidence !== null && face.confidence !== undefined) shareText += `Confidence: ${(Number(face.confidence) * 100).toFixed(1)}%\n`;
+      shareText += `\n`;
     });
 
-    shareText += 'Try TrueAge: https://trueage.app';
+    shareText += `Try TrueAge: https://trueage.app`;
     return shareText;
   };
 
@@ -1699,10 +1691,11 @@ function AppContent() {
               No clear faces detected
             </Text>
             <Text category='c1' style={styles.noResultsSubtext}>
-              {results && results.faces && results.faces.length > 0 
-                ? `Found ${results.faces.length} face(s) but none with sufficient confidence (≥90%)`
-                : 'Try a clearer photo with visible faces'
-              }
+              {results && results.message
+                ? `${results.message}\nTry a front-facing photo in good lighting, filling more of the frame.`
+                : (results && results.faces && results.faces.length > 0 
+                    ? `Found ${results.faces.length} face(s) but none with sufficient confidence (≥90%).\nTry a front-facing photo in good lighting, filling more of the frame.`
+                    : 'Try a clearer photo with visible faces')}
             </Text>
           </Card>
         )}
