@@ -1148,10 +1148,15 @@ async def analyze_face(request: Request, file: UploadFile = File(...)):
         high_confidence_faces = ultra_conf_faces if len(ultra_conf_faces) > 0 else [f for f in faces if f['confidence'] >= 0.95]
 
         if not high_confidence_faces:
+            # Report best detected confidence if any faces were found
+            try:
+                best_conf = max([f.get('confidence', 0.0) for f in faces]) if faces else 0.0
+            except Exception:
+                best_conf = 0.0
             return AnalyzeResponse(
                 success=False,
                 faces=[],
-                message="No faces detected (none ≥95% confidence)"
+                message=f"No clear faces detected. Best detection confidence was {best_conf * 100:.1f}% (need ≥95%)."
             )
         
         results: List[FaceResult] = []

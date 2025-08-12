@@ -822,9 +822,18 @@ function AppContent() {
   };
 
   const [toast, setToast] = useState({ visible: false, text: '' });
+  const toastOpacity = useRef(new Animated.Value(0)).current;
   const showToast = (text) => {
     setToast({ visible: true, text });
-    setTimeout(() => setToast({ visible: false, text: '' }), 1800);
+    // Fade in
+    Animated.timing(toastOpacity, { toValue: 1, duration: 180, useNativeDriver: true }).start(() => {
+      // Hold, then fade out
+      setTimeout(() => {
+        Animated.timing(toastOpacity, { toValue: 0, duration: 220, useNativeDriver: true }).start(() => {
+          setToast({ visible: false, text: '' });
+        });
+      }, 1200);
+    });
   };
 
   const shareResults = async () => {
@@ -1746,11 +1755,11 @@ function AppContent() {
       {renderInfoModal()}
       {renderContentModal()}
       {Platform.OS === 'web' && toast.visible && (
-        <View style={styles.toastOverlay}>
+        <Animated.View style={[styles.toastOverlay, { opacity: toastOpacity }] }>
           <GlassPanel style={styles.toastCard}>
             <Text style={styles.toastText}>{toast.text}</Text>
           </GlassPanel>
-        </View>
+        </Animated.View>
       )}
     </SafeAreaView>
   );
