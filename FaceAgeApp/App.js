@@ -151,7 +151,7 @@ const MODEL_LABELS = {
   harvard: 'Harvard',
   harvard_calibrated: 'Harvard (calibrated)',
   deepface: 'DeepFace',
-  chatgpt: 'ChatGPT',
+  chatgpt: 'GPT-Vision',
   mean: 'Mean Age',
 };
 
