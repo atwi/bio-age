@@ -1488,12 +1488,50 @@ function AppContent() {
                           backgroundColor: '#151922',
                           justifyContent: 'center',
                           alignItems: 'center',
+                          position: 'relative',
                         }}>
                           <Image
                             source={{ uri: faceMeshOverlays[index] ? `data:image/jpeg;base64,${faceMeshOverlays[index]}` : `data:image/jpeg;base64,${face.face_crop_base64}` }}
                             style={{ width: '100%', height: '100%', borderRadius: 20, transform: [{ scaleX: sourceIsSelfie ? -1 : 1 }] }}
                             resizeMode="cover"
                           />
+                          
+                          {/* Age Estimate Badge Overlay */}
+                          {consensus !== null && (
+                            <View style={{
+                              position: 'absolute',
+                              top: 8,
+                              right: 8,
+                              backgroundColor: 'rgba(20, 25, 35, 0.85)',
+                              borderRadius: 12,
+                              paddingHorizontal: 10,
+                              paddingVertical: 6,
+                              borderWidth: 1,
+                              borderColor: 'rgba(79, 140, 255, 0.3)',
+                              shadowColor: '#000',
+                              shadowOffset: { width: 0, height: 2 },
+                              shadowOpacity: 0.3,
+                              shadowRadius: 4,
+                              elevation: 3,
+                            }}>
+                              <Text style={{
+                                fontSize: 16,
+                                fontWeight: 'bold',
+                                color: '#4F8CFF',
+                                textAlign: 'center',
+                              }}>
+                                {Math.round(consensus)}
+                              </Text>
+                              <Text style={{
+                                fontSize: 10,
+                                color: '#FFFFFF',
+                                textAlign: 'center',
+                                marginTop: -2,
+                              }}>
+                                years
+                              </Text>
+                            </View>
+                          )}
                         </View>
                         <View style={styles.faceOverlay}>
                           <View style={styles.detectionIndicator}>
@@ -1954,11 +1992,14 @@ const styles = StyleSheet.create({
   },
   demoImageContainer: {
     alignItems: 'center',
-    marginBottom: 25,
+    marginTop: 40,
+    marginBottom: 52,
+    marginLeft: 40,
+    marginRight: 40,
   },
   demoImage: {
-    width: Math.min(width * 0.85, 400),
-    height: Math.min(width * 0.53, 400),
+    width: Math.min(width * 0.65, 300),
+    height: Math.min(width * 0.4, 300),
     borderRadius: 15,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
