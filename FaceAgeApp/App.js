@@ -1489,10 +1489,24 @@ function AppContent() {
                           justifyContent: 'center',
                           alignItems: 'center',
                           position: 'relative',
+                          // Neon gradient border
+                          borderWidth: 1,
+                          borderColor: 'transparent',
+                          background: 'linear-gradient(135deg, #00FFFF 0%, #4F8CFF 25%, #FF6B9D 50%, #4F8CFF 75%, #00FFFF 100%)',
+                          padding: 1,
                         }}>
+                          <View style={{
+                            width: '100%',
+                            height: '100%',
+                            borderRadius: 19,
+                            backgroundColor: '#151922',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            overflow: 'hidden',
+                          }}>
                           <Image
                             source={{ uri: faceMeshOverlays[index] ? `data:image/jpeg;base64,${faceMeshOverlays[index]}` : `data:image/jpeg;base64,${face.face_crop_base64}` }}
-                            style={{ width: '100%', height: '100%', borderRadius: 20, transform: [{ scaleX: sourceIsSelfie ? -1 : 1 }] }}
+                            style={{ width: '100%', height: '100%', borderRadius: 19, transform: [{ scaleX: sourceIsSelfie ? -1 : 1 }] }}
                             resizeMode="cover"
                           />
                           
@@ -1502,41 +1516,38 @@ function AppContent() {
                               position: 'absolute',
                               top: 8,
                               right: 8,
-                              backgroundColor: 'rgba(20, 25, 35, 0.85)',
+                              backgroundColor: 'rgba(31, 60, 110, 0.83)', // Dark blue background
                               borderRadius: 12,
-                              paddingHorizontal: 10,
-                              paddingVertical: 6,
-                              borderWidth: 1,
-                              borderColor: 'rgba(79, 140, 255, 0.3)',
-                              shadowColor: '#000',
-                              shadowOffset: { width: 0, height: 2 },
-                              shadowOpacity: 0.3,
-                              shadowRadius: 4,
-                              elevation: 3,
+                              paddingHorizontal: 12,
+                              paddingVertical: 8,
+                              borderWidth: 2,
+                              borderColor: '#4F8CFF', // Bright blue border
+                              shadowColor: '#4F8CFF',
+                              shadowOffset: { width: 0, height: 0 },
+                              shadowOpacity: 0.6,
+                              shadowRadius: 8,
+                              elevation: 8,
                             }}>
                               <Text style={{
-                                fontSize: 16,
+                                fontSize: 18,
                                 fontWeight: 'bold',
-                                color: '#4F8CFF',
+                                color: '#FFFFFF', // White for age number
                                 textAlign: 'center',
                               }}>
                                 {Math.round(consensus)}
                               </Text>
                               <Text style={{
-                                fontSize: 10,
-                                color: '#FFFFFF',
+                                fontSize: 11,
+                                color: '#FFFFFF', // White for "years"
                                 textAlign: 'center',
                                 marginTop: -2,
+                                fontWeight: '500',
                               }}>
                                 years
                               </Text>
                             </View>
                           )}
                         </View>
-                        <View style={styles.faceOverlay}>
-                          <View style={styles.detectionIndicator}>
-                            <Text style={styles.detectionIcon}>✓</Text>
-                          </View>
                         </View>
                       </Layout>
                     )}
