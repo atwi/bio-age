@@ -1293,7 +1293,7 @@ function AppContent() {
       {/* Upload/Take Photo UI below */}
       <View style={styles.demoImageContainer}>
         <Image 
-          source={require('./assets/demoimage.png')} 
+          source={require('./assets/demoimage.webp')} 
           style={styles.demoImage}
           resizeMode="contain"
         />
