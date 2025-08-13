@@ -1288,7 +1288,7 @@ function AppContent() {
         🧬 Find Out How Old You Look – Instantly
       </Text>
       <Text category='s1' style={styles.stepSubtitle}>
-      Upload or snap a photo to learn your biological and perceived age in seconds with advanced AI age recognition.
+      Upload a photo to learn your biological and perceived age in seconds with advanced AI age recognition.
       </Text>
       {/* Upload/Take Photo UI below */}
       <View style={styles.demoImageContainer}>
