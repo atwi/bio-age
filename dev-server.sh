@@ -53,12 +53,13 @@ if lsof -Pi :8001 -sTCP:LISTEN -t >/dev/null ; then
     esac
 fi
 
-# Start backend server
-echo "🔧 Starting backend server..."
+# Start backend server with auto-reload
+echo "🔧 Starting backend server (auto-reload enabled)..."
 cd /Users/alext/Documents/GitHub/bio-age
 source venv/bin/activate
 export DEVELOPMENT=true
-python main.py &
+# Use uvicorn reload so code changes are picked up without manual restarts
+uvicorn main:app --host 0.0.0.0 --port 8001 --reload &
 BACKEND_PID=$!
 
 # Wait for backend to start
@@ -85,7 +86,7 @@ echo "📱 Backend API: http://localhost:8001"
 echo "🌐 Frontend: http://localhost:19006"
 echo "📊 Health Check: http://localhost:8001/api/health"
 echo ""
-echo "💡 Hot reloading is enabled - changes will appear automatically!"
+echo "💡 Hot reloading is enabled - backend changes auto-restart; frontend uses HMR."
 echo "🛑 Press Ctrl+C to stop both servers"
 
 # Wait for user to stop

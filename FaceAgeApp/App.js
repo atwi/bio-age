@@ -180,12 +180,7 @@ const AppHeader = React.memo(function AppHeader({ onShowInfo, user, onSignIn, on
     />
   );
 
-  const ContactAction = () => (
-    <TopNavigationAction
-      icon={(props) => <Icon {...props} name='email-outline' />} 
-      onPress={openEmail}
-    />
-  );
+  
   return (
     <TopNavigation
       alignment='center'
@@ -224,7 +219,6 @@ const AppHeader = React.memo(function AppHeader({ onShowInfo, user, onSignIn, on
             </>
           )}
           <InfoAction />
-          <ContactAction />
         </Layout>
       )}
       style={styles.headerNav}
