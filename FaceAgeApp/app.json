@@ -28,7 +28,12 @@
       "edgeToEdgeEnabled": true
     },
     "web": {
-      "favicon": "./assets/logo.png"
+      "favicon": "./assets/logo.png",
+      "name": "Learn How Old You Look with Free Facial Aging Test - TrueAge",
+      "shortName": "TrueAge",
+      "meta": {
+        "description": "Learn how old you really look with TrueAge’s AI facial aging test powered by a Harvard model trained on 200k+ real people. See what factors influence your perceived age and learn how you can look younger."
+      }
     },
     "plugins": [
       [
