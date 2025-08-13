@@ -51,6 +51,7 @@ import logo from './assets/logo.png';
 import LoadingSpinner from './components/LoadingSpinner';
 import GlassPanel from './components/GlassPanel';
 import customDark from './theme/custom-dark.json';
+import FAQAccordion from './components/FAQAccordion';
 
 const { width, height } = Dimensions.get('window');
 const MAIN_MAX_WIDTH = 500;
@@ -1297,6 +1298,11 @@ function AppContent() {
           style={styles.demoImage}
           resizeMode="contain"
         />
+      </View>
+
+      {/* FAQ Accordion */}
+      <View style={{ width: '100%', maxWidth: MAIN_MAX_WIDTH, alignSelf: 'center', marginTop: 8, marginBottom: 8 }}>
+        <FAQAccordion />
       </View>
 
       <Layout style={styles.buttonContainer}>
