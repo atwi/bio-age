@@ -1300,12 +1300,8 @@ function AppContent() {
         />
       </View>
 
-      {/* FAQ Accordion */}
-      <View style={{ width: '100%', maxWidth: MAIN_MAX_WIDTH, alignSelf: 'center', marginTop: 8, marginBottom: 8 }}>
-        <FAQAccordion />
-      </View>
-
       <Layout style={styles.buttonContainer}>
+
         <Button
           style={styles.primaryButton}
           onPress={takePhoto}
@@ -1330,6 +1326,11 @@ function AppContent() {
           <Text style={styles.secondaryButtonText}>Choose From Gallery</Text>
         </Button>
       </Layout>
+
+      {/* FAQ Accordion */}
+      <View style={{ width: '100%', maxWidth: MAIN_MAX_WIDTH, alignSelf: 'center', marginTop: 8, marginBottom: 8 }}>
+        <FAQAccordion />
+      </View>
       
       {/* Model status removed from UI - check console for status */}
 
