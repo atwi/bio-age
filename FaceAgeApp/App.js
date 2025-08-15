@@ -315,9 +315,14 @@ function AppContent() {
   const [livePrediction, setLivePrediction] = useState(null);
   const [liveLoading, setLiveLoading] = useState(false);
   const [facePosition, setFacePosition] = useState(null); // { x, y, width, height }
+  const [analysisProgress, setAnalysisProgress] = useState(0); // 0-100 for loading ring
+  const [showFullResultsButton, setShowFullResultsButton] = useState(false);
+  const [hasCompletedAnalysis, setHasCompletedAnalysis] = useState(false); // Track if analysis is complete
   const lastFaceBoxRef = useRef(null); // {minX, minY, maxX, maxY}
   const analyzingLiveRef = useRef(false);
   const lastAnalyzeTimeRef = useRef(0);
+  const autoAnalysisTimeoutRef = useRef(null);
+  const wasAlignedRef = useRef(false); // Track previous alignment state
 
   // Request permissions on mount
   useEffect(() => {
@@ -573,6 +578,12 @@ function AppContent() {
       webCameraStream.getTracks().forEach(track => track.stop());
       setWebCameraStream(null);
     }
+    // Clear any pending auto-analysis timeout
+    if (autoAnalysisTimeoutRef.current) {
+      console.log('[LiveAR] Clearing timeout - camera closed');
+      clearTimeout(autoAnalysisTimeoutRef.current);
+      autoAnalysisTimeoutRef.current = null;
+    }
     setShowWebCamera(false);
   };
 
@@ -592,6 +603,17 @@ function AppContent() {
     try {
       console.log('[LiveAR] Starting analyzeFaceLive with:', imageObj);
       setLiveLoading(true);
+      setAnalysisProgress(0);
+      
+      // Simulate progress updates with smoother animation
+      const progressInterval = setInterval(() => {
+        setAnalysisProgress(prev => {
+          if (prev >= 90) return prev; // Stop at 90% until API responds
+          // Smoother progress with smaller, more frequent increments
+          return Math.min(90, prev + (Math.random() * 3 + 1)); // 1-4% increments
+        });
+      }, 100); // More frequent updates for smoother animation
+      
       const formData = new FormData();
       if (typeof imageObj?.uri === 'string' && (imageObj.uri.startsWith('data:') || imageObj.uri.startsWith('blob:'))) {
         console.log('[LiveAR] Processing blob/data URL');
@@ -609,6 +631,7 @@ function AppContent() {
         console.log('[LiveAR] No valid image object provided');
         setLiveLoading(false);
         analyzingLiveRef.current = false;
+        clearInterval(progressInterval);
         return;
       }
 
@@ -636,7 +659,15 @@ function AppContent() {
           }
         }
         console.log('[LiveAR] Calculated age to show:', ageToShow);
-        setLivePrediction(ageToShow != null && !Number.isNaN(ageToShow) ? ageToShow : null);
+        
+        // Complete the progress animation
+        setAnalysisProgress(100);
+        setTimeout(() => {
+          setLivePrediction(ageToShow != null && !Number.isNaN(ageToShow) ? ageToShow : null);
+          setShowFullResultsButton(true);
+          setHasCompletedAnalysis(true); // Mark analysis as completed
+        }, 300); // Small delay for smooth transition
+        
       } else {
         console.log('[LiveAR] API request failed with status:', response.status);
         const errorText = await response.text();
@@ -776,8 +807,18 @@ function AppContent() {
           if (!faces.length) {
             setGuidanceMessage('Align your face in the frame');
             setIsAligned(false);
+            // Don't reset wasAlignedRef here - only reset it when analysis is complete
             setFacePosition(null); // Clear face position when no face detected
-            setLivePrediction(null); // Clear prediction when face is lost
+            
+            // NEVER clear analysis results when face is lost - only clear on Try Again or page reload
+            // The results should persist even when face moves out of frame
+            
+            // Clear any pending auto-analysis timeout
+            if (autoAnalysisTimeoutRef.current) {
+              console.log('[LiveAR] Clearing timeout - face lost');
+              clearTimeout(autoAnalysisTimeoutRef.current);
+              autoAnalysisTimeoutRef.current = null;
+            }
             // Smoothly fade dots out when face is lost
             dotAlphaRef.current += (0 - dotAlphaRef.current) * 0.2;
             return;
@@ -823,7 +864,48 @@ function AppContent() {
               } else {
                 message = 'Ready to capture';
               }
-              setIsAligned(message === 'Ready to capture');
+              const isCurrentlyAligned = message === 'Ready to capture';
+              const wasAligned = wasAlignedRef.current;
+              setIsAligned(isCurrentlyAligned);
+              wasAlignedRef.current = isCurrentlyAligned;
+              
+                            // Auto-trigger analysis when face becomes aligned and not already analyzing
+              if (isCurrentlyAligned && !wasAligned && !analyzingLiveRef.current && !liveLoading && !hasCompletedAnalysis) {
+                console.log('[LiveAR] Face aligned, preparing to auto-trigger analysis');
+                // Small delay to ensure face is stable
+                if (autoAnalysisTimeoutRef.current) {
+                  console.log('[LiveAR] Clearing existing timeout');
+                  clearTimeout(autoAnalysisTimeoutRef.current);
+                }
+                console.log('[LiveAR] Setting new timeout');
+                autoAnalysisTimeoutRef.current = setTimeout(() => {
+                  console.log('[LiveAR] Auto-trigger timeout fired!');
+                  const v = videoRef.current;
+                  console.log('[LiveAR] Auto-trigger timeout fired, checking conditions:', {
+                    hasVideo: !!v,
+                    analyzingLive: analyzingLiveRef.current,
+                    liveLoading,
+                    videoReady: v ? (v.videoWidth && v.videoHeight && v.readyState >= 2) : false
+                  });
+                  if (v && !analyzingLiveRef.current && !liveLoading && v.videoWidth && v.videoHeight && v.readyState >= 2) {
+                    console.log('[LiveAR] Auto-triggering analysis');
+                    analyzingLiveRef.current = true;
+                    lastAnalyzeTimeRef.current = Date.now();
+                    setLivePrediction(null);
+                    setLiveLoading(true);
+                    setAnalysisProgress(0);
+                    setShowFullResultsButton(false);
+                    triggerLiveAnalysisFromVideo(v);
+                  } else {
+                    console.log('[LiveAR] Auto-trigger conditions not met, not starting analysis');
+                  }
+                }, 1000); // 1 second delay to ensure face is stable
+                console.log('[LiveAR] Timeout set, waiting 1 second...');
+              } else if (isCurrentlyAligned && wasAligned) {
+                console.log('[LiveAR] Face still aligned, no need to trigger again');
+              } else if (!isCurrentlyAligned) {
+                console.log('[LiveAR] Face not ready:', message);
+              }
             }
           } catch (_) {}
 
@@ -1198,7 +1280,7 @@ function AppContent() {
         
         {/* Top overlay with title */}
         <View style={styles.cameraTopOverlay}>
-          {!liveLoading && livePrediction === null && (
+          {livePrediction === null && (
             <Animated.View
               style={[
                 styles.instructionContainer,
@@ -1206,20 +1288,24 @@ function AppContent() {
                   opacity: badgeOpacity,
                   transform: [{ scale: badgeScale }],
                   backdropFilter: 'blur(10px)',
-                  backgroundColor: isAligned ? 'rgba(0, 220, 140, 0.18)' : 'rgba(0, 0, 0, 0.28)',
+                  backgroundColor: liveLoading ? 'rgba(0, 220, 140, 0.18)' : (isAligned ? 'rgba(0, 220, 140, 0.18)' : 'rgba(0, 0, 0, 0.28)'),
                   borderWidth: 1,
-                  borderColor: isAligned ? 'rgba(0, 220, 140, 0.45)' : 'rgba(255, 255, 255, 0.28)',
-                  filter: isAligned ? 'drop-shadow(0 0 10px rgba(0,220,140,0.35))' : 'none',
+                  borderColor: liveLoading ? 'rgba(0, 220, 140, 0.45)' : (isAligned ? 'rgba(0, 220, 140, 0.45)' : 'rgba(255, 255, 255, 0.28)'),
+                  filter: (liveLoading || isAligned) ? 'drop-shadow(0 0 10px rgba(0,220,140,0.35))' : 'none',
                 },
               ]}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                {isAligned ? (
+                {liveLoading ? (
+                  <Ionicons name="scan-outline" size={16} color="rgba(0,220,140,0.95)" />
+                ) : isAligned ? (
                   <Ionicons name="checkmark-circle" size={16} color="rgba(0,220,140,0.95)" />
                 ) : (
                   <Ionicons name="scan-outline" size={16} color="rgba(255,255,255,0.9)" />
                 )}
-                <Text style={styles.instructionText}>{guidanceMessage}</Text>
+                <Text style={styles.instructionText}>
+                  {liveLoading ? 'Scanning face...' : guidanceMessage}
+                </Text>
               </View>
             </Animated.View>
           )}
@@ -1228,47 +1314,54 @@ function AppContent() {
         {/* Face Outline Overlay */}
         <View style={styles.faceOutlineContainer} />
         
-        {/* Live Prediction Display */}
+        {/* Loading Ring Around Face */}
         {liveLoading && facePosition && videoRef.current && (
           <View style={{
             position: 'absolute',
-            left: (videoRef.current.videoWidth || 640) - facePosition.x - 60, // Mirror the X position using video width
-            top: facePosition.minY - 120, // Position above the face box (not on forehead)
-            zIndex: 6,
-            backgroundColor: 'rgba(255, 255, 255, 0.15)', // More transparent/frosty
-            borderRadius: 12,
-            padding: 16,
-            borderWidth: 1,
-            borderColor: 'rgba(255, 255, 255, 0.4)',
-            backdropFilter: 'blur(20px)', // More blur for frosty effect
-            minWidth: 120,
-            alignItems: 'center',
-            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)' // Subtle shadow
+            left: (videoRef.current.videoWidth || 640) - facePosition.x - facePosition.width/2 - 20,
+            top: facePosition.minY - 20,
+            width: facePosition.width + 40,
+            height: facePosition.height + 40,
+            zIndex: 5,
+            pointerEvents: 'none'
           }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              {/* Loading spinner */}
-              <View style={{
-                width: 16,
-                height: 16,
-                borderRadius: 8,
-                borderWidth: 2,
-                borderColor: 'rgba(255, 255, 255, 0.3)',
-                borderTopColor: '#fff',
-                animation: 'spin 1s linear infinite'
-              }} />
-              <Text style={{
-                color: '#fff',
-                fontSize: 16,
-                fontWeight: 'bold',
-                textAlign: 'center',
-                textShadow: '0 2px 4px rgba(0, 0, 0, 0.3)' // Text shadow for better readability
-              }}>
-                Analyzing...
-              </Text>
-            </View>
+            {/* Progress Ring */}
+            <svg
+              width={facePosition.width + 40}
+              height={facePosition.height + 40}
+              style={{ position: 'absolute', top: 0, left: 0 }}
+            >
+              {/* Background ring */}
+              <circle
+                cx={(facePosition.width + 40) / 2}
+                cy={(facePosition.height + 40) / 2}
+                r={(facePosition.width + 40) / 2 - 2}
+                fill="none"
+                stroke="rgba(255, 255, 255, 0.2)"
+                strokeWidth="3"
+              />
+              {/* Progress ring */}
+              <circle
+                cx={(facePosition.width + 40) / 2}
+                cy={(facePosition.height + 40) / 2}
+                r={(facePosition.width + 40) / 2 - 2}
+                fill="none"
+                stroke="rgba(0, 220, 140, 0.8)"
+                strokeWidth="3"
+                strokeDasharray={`${2 * Math.PI * ((facePosition.width + 40) / 2 - 2)}`}
+                strokeDashoffset={`${2 * Math.PI * ((facePosition.width + 40) / 2 - 2) * (1 - analysisProgress / 100)}`}
+                strokeLinecap="round"
+                transform={`rotate(-90 ${(facePosition.width + 40) / 2} ${(facePosition.height + 40) / 2})`}
+                style={{ 
+                  transition: 'stroke-dashoffset 0.3s cubic-bezier(0.4, 0.0, 0.2, 1)',
+                  filter: 'drop-shadow(0 0 8px rgba(0, 220, 140, 0.4))'
+                }}
+              />
+            </svg>
           </View>
         )}
         
+        {/* Live Prediction Display */}
         {livePrediction !== null && !liveLoading && facePosition && videoRef.current && (
           <View style={{
             position: 'absolute',
@@ -1306,6 +1399,61 @@ function AppContent() {
           </View>
         )}
         
+        {/* Results Button */}
+        {showFullResultsButton && livePrediction !== null && (
+          <View style={{
+            position: 'absolute',
+            bottom: 100,
+            left: 0,
+            right: 0,
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 6
+          }}>
+            {/* See Full Results Button */}
+            <TouchableOpacity
+              onPress={() => {
+                // Capture current frame and go to full results
+                const v = videoRef.current;
+                if (v && canvasRef.current) {
+                  const canvas = canvasRef.current;
+                  canvas.width = v.videoWidth;
+                  canvas.height = v.videoHeight;
+                  const ctx = canvas.getContext('2d');
+                  ctx.drawImage(v, 0, 0);
+                  canvas.toBlob(async (blob) => {
+                    if (blob) {
+                      const imageUri = URL.createObjectURL(blob);
+                      const compressedImage = await resizeImage(imageUri);
+                      setSelectedImage(compressedImage);
+                      closeWebCamera();
+                      setSourceIsSelfie(true);
+                      setCurrentStep(2); // Move to analyzing step
+                      analyzeFace(compressedImage);
+                    }
+                  }, 'image/jpeg', 0.8);
+                }
+              }}
+              activeOpacity={0.85}
+              style={{
+                backgroundColor: 'rgba(0, 0, 0, 0.28)',
+                borderColor: 'rgba(255, 255, 255, 0.28)',
+                borderWidth: 1,
+                paddingHorizontal: 16,
+                paddingVertical: 10,
+                borderRadius: 999,
+                backdropFilter: 'blur(10px)',
+                minWidth: 140,
+                alignItems: 'center'
+              }}
+            >
+              <Text style={{ color: '#E6EAF2', fontWeight: '700', fontSize: 14 }}>
+                See Full Results
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        
         {/* Bottom overlay with buttons */}
         <View style={styles.cameraBottomOverlay}>
           <TouchableOpacity
@@ -1315,55 +1463,20 @@ function AppContent() {
             <Text style={styles.cameraButtonText}>Cancel</Text>
           </TouchableOpacity>
           
-          <TouchableOpacity
-            style={[styles.cameraOverlayButton, styles.captureButton]}
-            onPress={captureWebPhoto}
-          >
-            <View style={styles.captureButtonInner} />
-          </TouchableOpacity>
+          {/* Only show camera button if no results are shown */}
+          {!showFullResultsButton && (
+            <TouchableOpacity
+              style={[styles.cameraOverlayButton, styles.captureButton]}
+              onPress={captureWebPhoto}
+            >
+              <View style={styles.captureButtonInner} />
+            </TouchableOpacity>
+          )}
           
           <View style={styles.cameraButtonSpacer} />
         </View>
 
-        {/* Manual trigger button (web) */}
-        <View style={{ position: 'absolute', bottom: 24, left: 0, right: 0, alignItems: 'center', zIndex: 5 }}>
-          <TouchableOpacity
-            onPress={() => {
-              const v = videoRef.current;
-              if (v && !liveLoading && !analyzingLiveRef.current) {
-                // Check if video is ready
-                if (!v.videoWidth || !v.videoHeight || v.readyState < 2) {
-                  console.log('[LiveAR] Video not ready:', { 
-                    width: v.videoWidth, 
-                    height: v.videoHeight, 
-                    readyState: v.readyState 
-                  });
-                  return;
-                }
-                console.log('[LiveAR] Manual trigger');
-                analyzingLiveRef.current = true;
-                lastAnalyzeTimeRef.current = Date.now();
-                setLivePrediction(null);
-                setLiveLoading(true);
-                triggerLiveAnalysisFromVideo(v);
-              }
-            }}
-            activeOpacity={0.9}
-            style={{
-              backgroundColor: 'rgba(0,0,0,0.45)',
-              borderColor: 'rgba(255,255,255,0.25)',
-              borderWidth: 1,
-              paddingHorizontal: 16,
-              paddingVertical: 10,
-              borderRadius: 999,
-              backdropFilter: 'blur(10px)'
-            }}
-          >
-            <Text style={{ color: '#fff', fontWeight: '700' }}>
-              {liveLoading ? 'Estimating…' : 'Scan Now'}
-            </Text>
-          </TouchableOpacity>
-        </View>
+        {/* Removed debug button */}
       </View>
     );
   }
