@@ -318,6 +318,8 @@ function AppContent() {
   const [analysisProgress, setAnalysisProgress] = useState(0); // 0-100 for loading ring
   const [showFullResultsButton, setShowFullResultsButton] = useState(false);
   const [hasCompletedAnalysis, setHasCompletedAnalysis] = useState(false); // Track if analysis is complete
+  const [arAnalysisResults, setArAnalysisResults] = useState(null); // Store AR analysis results
+  const [arCapturedImage, setArCapturedImage] = useState(null); // Store captured image from AR
   const lastFaceBoxRef = useRef(null); // {minX, minY, maxX, maxY}
   const analyzingLiveRef = useRef(false);
   const lastAnalyzeTimeRef = useRef(0);
@@ -584,6 +586,9 @@ function AppContent() {
       clearTimeout(autoAnalysisTimeoutRef.current);
       autoAnalysisTimeoutRef.current = null;
     }
+    // Clear stored AR results when camera is closed
+    setArAnalysisResults(null);
+    setArCapturedImage(null);
     setShowWebCamera(false);
   };
 
@@ -600,13 +605,14 @@ function AppContent() {
 
   // Live web: capture the current frame and analyze without changing steps
   const analyzeFaceLive = async (imageObj) => {
+    let progressInterval = null;
     try {
       console.log('[LiveAR] Starting analyzeFaceLive with:', imageObj);
       setLiveLoading(true);
       setAnalysisProgress(0);
       
       // Simulate progress updates with smoother animation
-      const progressInterval = setInterval(() => {
+      progressInterval = setInterval(() => {
         setAnalysisProgress(prev => {
           if (prev >= 90) return prev; // Stop at 90% until API responds
           // Smoother progress with smaller, more frequent increments
@@ -631,7 +637,7 @@ function AppContent() {
         console.log('[LiveAR] No valid image object provided');
         setLiveLoading(false);
         analyzingLiveRef.current = false;
-        clearInterval(progressInterval);
+        if (progressInterval) clearInterval(progressInterval);
         return;
       }
 
@@ -660,12 +666,17 @@ function AppContent() {
         }
         console.log('[LiveAR] Calculated age to show:', ageToShow);
         
+        // Clear progress interval before completing
+        if (progressInterval) clearInterval(progressInterval);
+        
         // Complete the progress animation
         setAnalysisProgress(100);
         setTimeout(() => {
           setLivePrediction(ageToShow != null && !Number.isNaN(ageToShow) ? ageToShow : null);
           setShowFullResultsButton(true);
           setHasCompletedAnalysis(true); // Mark analysis as completed
+          // Store the full analysis results for reuse
+          setArAnalysisResults(data);
         }, 300); // Small delay for smooth transition
         
       } else {
@@ -681,6 +692,8 @@ function AppContent() {
       console.log('[LiveAR] Analysis completed, setting loading to false');
       setLiveLoading(false);
       analyzingLiveRef.current = false;
+      // Always clear the progress interval
+      if (progressInterval) clearInterval(progressInterval);
     }
   };
 
@@ -1365,34 +1378,36 @@ function AppContent() {
         {livePrediction !== null && !liveLoading && facePosition && videoRef.current && (
           <View style={{
             position: 'absolute',
-            left: (videoRef.current.videoWidth || 640) - facePosition.x - 60, // Mirror the X position using video width
+            left: (videoRef.current.videoWidth || 640) - facePosition.x - 50, // Mirror the X position using video width
             top: facePosition.minY - 120, // Position above the face box (not on forehead)
             zIndex: 6,
-            backgroundColor: 'rgba(255, 255, 255, 0.15)', // More transparent/frosty
-            borderRadius: 12,
-            padding: 16,
-            borderWidth: 2,
-            borderColor: 'rgba(0, 220, 140, 0.7)', // Success green border
-            backdropFilter: 'blur(20px)', // More blur for frosty effect
-            minWidth: 120,
+            backgroundColor: 'rgba(0, 220, 140, 0.18)', // Same as Ready to capture badge
+            borderRadius: 16,
+            padding: 20,
+            borderWidth: 1,
+            borderColor: 'rgba(0, 220, 140, 0.45)', // Same as Ready to capture badge
+            backdropFilter: 'blur(10px)', // Same as Ready to capture badge
+            minWidth: 100,
+            minHeight: 100,
             alignItems: 'center',
-            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1), 0 0 20px rgba(0, 220, 140, 0.2)' // Success glow
+            justifyContent: 'center',
+            filter: 'drop-shadow(0 0 10px rgba(0,220,140,0.35))' // Same glow as Ready to capture badge
           }}>
             <Text style={{
-              color: '#fff',
-              fontSize: 24,
+              color: '#E6EAF2',
+              fontSize: 28,
               fontWeight: 'bold',
               textAlign: 'center',
-              textShadow: '0 2px 4px rgba(0, 0, 0, 0.3)' // Text shadow for better readability
+              lineHeight: 32
             }}>
               {Math.round(livePrediction)}
             </Text>
             <Text style={{
-              color: 'rgba(255, 255, 255, 0.9)',
-              fontSize: 14,
+              color: '#E6EAF2',
+              fontSize: 12,
               textAlign: 'center',
-              marginTop: 4,
-              textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)' // Text shadow for better readability
+              marginTop: 2,
+              fontWeight: '600'
             }}>
               years old
             </Text>
@@ -1403,7 +1418,7 @@ function AppContent() {
         {showFullResultsButton && livePrediction !== null && (
           <View style={{
             position: 'absolute',
-            bottom: 100,
+            bottom: 140,
             left: 0,
             right: 0,
             alignItems: 'center',
@@ -1413,7 +1428,7 @@ function AppContent() {
             {/* See Full Results Button */}
             <TouchableOpacity
               onPress={() => {
-                // Capture current frame and go to full results
+                // Capture current frame for the full results page
                 const v = videoRef.current;
                 if (v && canvasRef.current) {
                   const canvas = canvasRef.current;
@@ -1426,28 +1441,40 @@ function AppContent() {
                       const imageUri = URL.createObjectURL(blob);
                       const compressedImage = await resizeImage(imageUri);
                       setSelectedImage(compressedImage);
+                      setArCapturedImage(compressedImage);
                       closeWebCamera();
                       setSourceIsSelfie(true);
-                      setCurrentStep(2); // Move to analyzing step
-                      analyzeFace(compressedImage);
+                      
+                      // Use stored AR results instead of re-analyzing
+                      if (arAnalysisResults) {
+                        console.log('[LiveAR] Using stored AR results for full results page');
+                        setResults(arAnalysisResults);
+                        setCurrentStep(3); // Go directly to results
+                      } else {
+                        // Fallback to re-analysis if no stored results
+                        console.log('[LiveAR] No stored results, falling back to re-analysis');
+                        setCurrentStep(2);
+                        analyzeFace(compressedImage);
+                      }
                     }
                   }, 'image/jpeg', 0.8);
                 }
               }}
               activeOpacity={0.85}
               style={{
-                backgroundColor: 'rgba(0, 0, 0, 0.28)',
-                borderColor: 'rgba(255, 255, 255, 0.28)',
+                backgroundColor: 'rgba(0, 220, 140, 0.18)',
+                borderColor: 'rgba(0, 220, 140, 0.45)',
                 borderWidth: 1,
-                paddingHorizontal: 16,
-                paddingVertical: 10,
+                paddingHorizontal: 20,
+                paddingVertical: 12,
                 borderRadius: 999,
                 backdropFilter: 'blur(10px)',
-                minWidth: 140,
-                alignItems: 'center'
+                minWidth: 160,
+                alignItems: 'center',
+                boxShadow: '0 0 10px rgba(0,220,140,0.35)'
               }}
             >
-              <Text style={{ color: '#E6EAF2', fontWeight: '700', fontSize: 14 }}>
+              <Text style={{ color: '#E6EAF2', fontWeight: '700', fontSize: 16 }}>
                 See Full Results
               </Text>
             </TouchableOpacity>
