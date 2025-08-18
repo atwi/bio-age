@@ -877,6 +877,19 @@ function AppContent() {
               clearTimeout(autoAnalysisTimeoutRef.current);
               autoAnalysisTimeoutRef.current = null;
             }
+            
+            // Clear countdown if no face detected
+            if (countdown !== null || countdownTimeoutRef.current) {
+              console.log('[LiveAR] Clearing countdown - no face detected');
+              setCountdown(null);
+              if (countdownTimeoutRef.current) {
+                clearTimeout(countdownTimeoutRef.current);
+                countdownTimeoutRef.current = null;
+              }
+              // Reset countdown opacity to 0
+              countdownOpacity.setValue(0);
+            }
+            
             // Smoothly fade dots out when face is lost
             dotAlphaRef.current += (0 - dotAlphaRef.current) * 0.2;
             return;
@@ -1027,12 +1040,14 @@ function AppContent() {
               } else if (!isCurrentlyAligned) {
                 console.log('[LiveAR] Face not ready:', message);
                 // Clear countdown if face is no longer aligned
-                if (countdown !== null) {
+                if (countdown !== null || countdownTimeoutRef.current) {
                   setCountdown(null);
                   if (countdownTimeoutRef.current) {
                     clearTimeout(countdownTimeoutRef.current);
                     countdownTimeoutRef.current = null;
                   }
+                  // Reset countdown opacity to 0
+                  countdownOpacity.setValue(0);
                 }
               }
             }
@@ -1744,19 +1759,19 @@ function AppContent() {
               }}
               activeOpacity={0.85}
               style={{
-                backgroundColor: 'rgba(0, 220, 140, 0.18)',
-                borderColor: 'rgba(0, 220, 140, 0.45)',
+                backgroundColor: 'rgba(14, 17, 22, 0.85)', // Match AR card background
+                borderColor: 'rgba(255,255,255,0.06)', // Match AR card border
                 borderWidth: 1,
                 paddingHorizontal: 20,
                 paddingVertical: 12,
-                borderRadius: 999,
+                borderRadius: 16, // Match AR card border radius
                 backdropFilter: 'blur(10px)',
                 minWidth: 160,
                 alignItems: 'center',
-                boxShadow: '0 0 10px rgba(0,220,140,0.35)'
+                filter: 'drop-shadow(0 0 20px rgba(0,0,0,0.5))' // Match AR card shadow
               }}
             >
-              <Text style={{ color: '#E6EAF2', fontWeight: '700', fontSize: 16 }}>
+              <Text style={{ color: '#E6EAF2', fontWeight: '700', fontSize: 14 }}>
                 See Full Results →
               </Text>
             </TouchableOpacity>
