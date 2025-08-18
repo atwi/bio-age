@@ -1498,22 +1498,46 @@ function AppContent() {
 
         
         {/* Live Age Estimates Card Display */}
-        {arAnalysisResults && arAnalysisResults.faces && arAnalysisResults.faces.length > 0 && !liveLoading && facePosition && videoRef.current && (
-          <View style={{
-            position: 'absolute',
-            left: (videoRef.current.videoWidth || 640) - facePosition.x - 150, // Mirror the X position using video width, wider for card
-            top: facePosition.minY - 200, // Position above the face box
-            zIndex: 6,
-            backgroundColor: 'rgba(14, 17, 22, 0.85)', // Slightly more opaque background
-            borderRadius: 16,
-            padding: 16,
-            borderWidth: 1,
-            borderColor: 'rgba(255,255,255,0.06)', // Subtle border like results page
-            backdropFilter: 'blur(10px)',
-            minWidth: 280,
-            maxWidth: 320,
-            filter: 'drop-shadow(0 0 20px rgba(0,0,0,0.5))'
-          }}>
+        {arAnalysisResults && arAnalysisResults.faces && arAnalysisResults.faces.length > 0 && !liveLoading && facePosition && videoRef.current && (() => {
+          // Calculate the actual visual scaling of the video element
+          const video = videoRef.current;
+          const videoRect = video.getBoundingClientRect();
+          const videoNativeWidth = video.videoWidth || 640;
+          const videoNativeHeight = video.videoHeight || 480;
+          
+          // Calculate scaling factors for the visual display
+          const scaleX = videoRect.width / videoNativeWidth;
+          const scaleY = videoRect.height / videoNativeHeight;
+          
+          // Convert face position from native video coordinates to visual coordinates
+          const visualFaceX = facePosition.x * scaleX;
+          const visualFaceY = facePosition.y * scaleY;
+          
+          // Mirror the X position for the card (since video is mirrored)
+          const cardWidth = 280; // minWidth of the card
+          const mirroredX = videoRect.width - visualFaceX - cardWidth / 2;
+          
+          // Position card so its bottom edge is just above the top of the detected face area
+          const visualFaceTop = facePosition.minY * scaleY; // Convert minY to visual coordinates
+          const cardHeight = 200; // Approximate height of the card
+          const cardY = visualFaceTop - cardHeight - 10; // Position card so its bottom is 10px above face top
+          
+          return (
+            <View style={{
+              position: 'absolute',
+              left: Math.max(20, Math.min(videoRect.width - cardWidth - 20, mirroredX)), // Clamp to screen bounds
+              top: Math.max(20, cardY), // Ensure card doesn't go off top
+              zIndex: 6,
+              backgroundColor: 'rgba(14, 17, 22, 0.85)', // Slightly more opaque background
+              borderRadius: 16,
+              padding: 16,
+              borderWidth: 1,
+              borderColor: 'rgba(255,255,255,0.06)', // Subtle border like results page
+              backdropFilter: 'blur(10px)',
+              minWidth: 280,
+              maxWidth: 320,
+              filter: 'drop-shadow(0 0 20px rgba(0,0,0,0.5))'
+            }}>
             {/* Age Estimates Header */}
             <Layout style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'transparent', marginBottom: 12 }}>
               <Text style={{ fontSize: 13, fontWeight: '700', color: '#E6EAF2', letterSpacing: 0.2 }}>AGE ESTIMATES</Text>
@@ -1548,10 +1572,10 @@ function AppContent() {
             {(() => {
               const face = arAnalysisResults.faces[0];
               const modelRows = [];
-              if (face.age_harvard !== null && face.age_harvard !== undefined) modelRows.push({ key: 'harvard', value: face.age_harvard, icon: '🧠', label: 'Harvard', desc: 'Deep learning model' });
-              if (face.age_harvard_calibrated !== null && face.age_harvard_calibrated !== undefined) modelRows.push({ key: 'harvard_calibrated', value: face.age_harvard_calibrated, icon: '🎯', label: 'Harvard (Calibrated)', desc: 'Optimized for accuracy' });
+              if (face.age_harvard !== null && face.age_harvard !== undefined) modelRows.push({ key: 'harvard', value: face.age_harvard, icon: '🧠', label: 'Harvard', desc: 'Best for people >40' });
+              if (face.age_harvard_calibrated !== null && face.age_harvard_calibrated !== undefined) modelRows.push({ key: 'harvard_calibrated', value: face.age_harvard_calibrated, icon: '🎯', label: 'Harvard (Calibrated)', desc: 'Harvard improved for people <40' });
               if (face.age_deepface !== null && face.age_deepface !== undefined) modelRows.push({ key: 'deepface', value: face.age_deepface, icon: '🤖', label: 'DeepFace', desc: 'Pre-trained model' });
-              if (face.age_chatgpt !== null && face.age_chatgpt !== undefined) modelRows.push({ key: 'chatgpt', value: face.age_chatgpt, icon: '🧠', label: 'ChatGPT', desc: 'AI reasoning' });
+              if (face.age_chatgpt !== null && face.age_chatgpt !== undefined) modelRows.push({ key: 'chatgpt', value: face.age_chatgpt, icon: '🧠', label: 'ChatGPT', desc: 'Accurate across age groups' });
               
               return modelRows.map((row, i) => (
                 <Layout key={row.key} style={{ marginBottom: i === modelRows.length - 1 ? 0 : 8, backgroundColor: 'transparent' }}>
@@ -1590,7 +1614,7 @@ function AppContent() {
               ));
             })()}
           </View>
-        )}
+        )})()}
         
         {/* Results Button */}
         {showFullResultsButton && livePrediction !== null && (
