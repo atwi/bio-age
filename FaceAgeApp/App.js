@@ -320,6 +320,7 @@ function AppContent() {
   const [showFullResultsButton, setShowFullResultsButton] = useState(false);
   const [hasCompletedAnalysis, setHasCompletedAnalysis] = useState(false); // Track if analysis is complete
   const [arAnalysisResults, setArAnalysisResults] = useState(null); // Store AR analysis results
+  const arAnalysisResultsRef = useRef(null); // Ref for AR analysis results
   const [arCapturedImage, setArCapturedImage] = useState(null); // Store captured image from AR
   const lastFaceBoxRef = useRef(null); // {minX, minY, maxX, maxY}
   const analyzingLiveRef = useRef(false);
@@ -588,7 +589,9 @@ function AppContent() {
       autoAnalysisTimeoutRef.current = null;
     }
     // Clear stored AR results when camera is closed
+    console.log('[LiveAR] Clearing AR results - camera closed');
     setArAnalysisResults(null);
+    arAnalysisResultsRef.current = null;
     setArCapturedImage(null);
     
     // Reset all analysis states
@@ -691,7 +694,9 @@ function AppContent() {
           setShowFullResultsButton(true);
           setHasCompletedAnalysis(true); // Mark analysis as completed
           // Store the full analysis results for reuse
+          console.log('[LiveAR] Setting AR results:', data);
           setArAnalysisResults(data);
+          arAnalysisResultsRef.current = data;
           
           console.log('[LiveAR] Analysis completed, hasCompletedAnalysis set to true');
         }, 300); // Small delay for smooth transition
@@ -901,7 +906,26 @@ function AppContent() {
               wasAlignedRef.current = isCurrentlyAligned;
               
                             // Auto-trigger analysis when face becomes aligned and not already analyzing
-              if (isCurrentlyAligned && !wasAligned && !analyzingLiveRef.current && !liveLoading && !hasCompletedAnalysis) {
+              console.log('[LiveAR] Face alignment check:', {
+                isCurrentlyAligned,
+                wasAligned: wasAlignedRef.current,
+                analyzingLive: analyzingLiveRef.current,
+                liveLoading,
+                hasCompletedAnalysis,
+                hasArResults: !!arAnalysisResults
+              });
+              
+              // Don't trigger analysis if we already have results
+              if (arAnalysisResultsRef.current) {
+                console.log('[LiveAR] Already have results, skipping analysis trigger');
+                console.log('[LiveAR] Results data:', arAnalysisResultsRef.current);
+                return;
+              }
+              
+              console.log('[LiveAR] No existing results, checking if should trigger analysis...');
+              
+              // Only trigger analysis if we don't already have results
+              if (isCurrentlyAligned && !wasAligned && !analyzingLiveRef.current && !liveLoading && !hasCompletedAnalysis && !arAnalysisResults) {
                 console.log('[LiveAR] Face aligned, preparing to auto-trigger analysis');
                 // Small delay to ensure face is stable
                 if (autoAnalysisTimeoutRef.current) {
@@ -1480,7 +1504,7 @@ function AppContent() {
             left: (videoRef.current.videoWidth || 640) - facePosition.x - 150, // Mirror the X position using video width, wider for card
             top: facePosition.minY - 200, // Position above the face box
             zIndex: 6,
-            backgroundColor: 'rgba(14, 17, 22, 0.95)', // Dark background like results page
+            backgroundColor: 'rgba(14, 17, 22, 0.85)', // Slightly more opaque background
             borderRadius: 16,
             padding: 16,
             borderWidth: 1,
@@ -1629,7 +1653,7 @@ function AppContent() {
               }}
             >
               <Text style={{ color: '#E6EAF2', fontWeight: '700', fontSize: 16 }}>
-                See Full Results
+                See Full Results →
               </Text>
             </TouchableOpacity>
           </View>
