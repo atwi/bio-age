@@ -1374,43 +1374,98 @@ function AppContent() {
           </View>
         )}
         
-        {/* Live Prediction Display */}
-        {livePrediction !== null && !liveLoading && facePosition && videoRef.current && (
+        {/* Live Age Estimates Card Display */}
+        {arAnalysisResults && arAnalysisResults.faces && arAnalysisResults.faces.length > 0 && !liveLoading && facePosition && videoRef.current && (
           <View style={{
             position: 'absolute',
-            left: (videoRef.current.videoWidth || 640) - facePosition.x - 50, // Mirror the X position using video width
-            top: facePosition.minY - 120, // Position above the face box (not on forehead)
+            left: (videoRef.current.videoWidth || 640) - facePosition.x - 150, // Mirror the X position using video width, wider for card
+            top: facePosition.minY - 200, // Position above the face box
             zIndex: 6,
-            backgroundColor: 'rgba(0, 220, 140, 0.18)', // Same as Ready to capture badge
+            backgroundColor: 'rgba(14, 17, 22, 0.95)', // Dark background like results page
             borderRadius: 16,
-            padding: 20,
+            padding: 16,
             borderWidth: 1,
-            borderColor: 'rgba(0, 220, 140, 0.45)', // Same as Ready to capture badge
-            backdropFilter: 'blur(10px)', // Same as Ready to capture badge
-            minWidth: 100,
-            minHeight: 100,
-            alignItems: 'center',
-            justifyContent: 'center',
-            filter: 'drop-shadow(0 0 10px rgba(0,220,140,0.35))' // Same glow as Ready to capture badge
+            borderColor: 'rgba(255,255,255,0.06)', // Subtle border like results page
+            backdropFilter: 'blur(10px)',
+            minWidth: 280,
+            maxWidth: 320,
+            filter: 'drop-shadow(0 0 20px rgba(0,0,0,0.5))'
           }}>
-            <Text style={{
-              color: '#E6EAF2',
-              fontSize: 28,
-              fontWeight: 'bold',
-              textAlign: 'center',
-              lineHeight: 32
-            }}>
-              {Math.round(livePrediction)}
-            </Text>
-            <Text style={{
-              color: '#E6EAF2',
-              fontSize: 12,
-              textAlign: 'center',
-              marginTop: 2,
-              fontWeight: '600'
-            }}>
-              years old
-            </Text>
+            {/* Age Estimates Header */}
+            <Layout style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'transparent', marginBottom: 12 }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: '#E6EAF2', letterSpacing: 0.2 }}>AGE ESTIMATES</Text>
+              {(() => {
+                const face = arAnalysisResults.faces[0];
+                const shownModelValues = [];
+                if (face.age_harvard !== null && face.age_harvard !== undefined) shownModelValues.push(face.age_harvard);
+                if (face.age_harvard_calibrated !== null && face.age_harvard_calibrated !== undefined) shownModelValues.push(face.age_harvard_calibrated);
+                if (face.age_deepface !== null && face.age_deepface !== undefined) shownModelValues.push(face.age_deepface);
+                if (face.age_chatgpt !== null && face.age_chatgpt !== undefined) shownModelValues.push(face.age_chatgpt);
+                let consensus = null;
+                if (shownModelValues.length > 0) {
+                  const sum = shownModelValues.reduce((acc, v) => acc + v, 0);
+                  consensus = sum / shownModelValues.length;
+                }
+                return consensus !== null ? (
+                  <View style={{
+                    backgroundColor: 'rgba(79, 140, 255, 0.2)',
+                    borderRadius: 12,
+                    paddingHorizontal: 8,
+                    paddingVertical: 4,
+                    borderWidth: 1,
+                    borderColor: 'rgba(79, 140, 255, 0.4)'
+                  }}>
+                    <Text style={{ fontSize: 11, fontWeight: '600', color: '#4F8CFF' }}>Avg {Math.round(consensus)} yrs</Text>
+                  </View>
+                ) : null;
+              })()}
+            </Layout>
+            
+            {/* Model rows */}
+            {(() => {
+              const face = arAnalysisResults.faces[0];
+              const modelRows = [];
+              if (face.age_harvard !== null && face.age_harvard !== undefined) modelRows.push({ key: 'harvard', value: face.age_harvard, icon: '🧠', label: 'Harvard', desc: 'Deep learning model' });
+              if (face.age_harvard_calibrated !== null && face.age_harvard_calibrated !== undefined) modelRows.push({ key: 'harvard_calibrated', value: face.age_harvard_calibrated, icon: '🎯', label: 'Harvard (Calibrated)', desc: 'Optimized for accuracy' });
+              if (face.age_deepface !== null && face.age_deepface !== undefined) modelRows.push({ key: 'deepface', value: face.age_deepface, icon: '🤖', label: 'DeepFace', desc: 'Pre-trained model' });
+              if (face.age_chatgpt !== null && face.age_chatgpt !== undefined) modelRows.push({ key: 'chatgpt', value: face.age_chatgpt, icon: '🧠', label: 'ChatGPT', desc: 'AI reasoning' });
+              
+              return modelRows.map((row, i) => (
+                <Layout key={row.key} style={{ marginBottom: i === modelRows.length - 1 ? 0 : 8, backgroundColor: 'transparent' }}>
+                  <Layout style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'transparent', minHeight: 32 }}>
+                    <Text style={{ fontSize: 16, marginRight: 8 }}>{row.icon}</Text>
+                    <Layout style={{ flex: 1, backgroundColor: 'transparent' }}>
+                      <Text style={{ fontWeight: '600', fontSize: 12, color: '#E6EAF2', marginBottom: 1 }}>{row.label}</Text>
+                      <Text style={{ fontSize: 10, color: '#9AA3AF', marginBottom: 2 }}>{row.desc}</Text>
+                    </Layout>
+                    <Text style={{ fontWeight: 'bold', fontSize: 13, color: '#E6EAF2' }}>{Math.round(row.value)}<Text style={{ fontSize: 10, color: '#9AA3AF' }}> yrs</Text></Text>
+                  </Layout>
+                  <View style={{ position: 'relative', height: 5, width: '100%', borderRadius: 3, backgroundColor: 'rgba(27,32,43,0.8)', overflow: 'hidden', marginTop: 2, marginBottom: 2 }}>
+                    {(() => {
+                      const min = 0, max = 100;
+                      const percent = Math.max(0, Math.min(1, ((row.value - min) / (max - min))));
+                      return percent > 0 ? (
+                        <View
+                          style={{
+                            position: 'absolute',
+                            left: 0,
+                            top: 0,
+                            width: `${percent * 100}%`,
+                            height: '100%',
+                            borderRadius: 3,
+                            backgroundColor: '#4F8CFF',
+                            zIndex: 1,
+                          }}
+                        />
+                      ) : null;
+                    })()}
+                  </View>
+                  {i !== modelRows.length - 1 && (
+                    <View style={{ height: 1, backgroundColor: 'rgba(27,32,43,0.8)', marginTop: 8, marginBottom: 8, marginLeft: 0 }} />
+                  )}
+                </Layout>
+              ));
+            })()}
           </View>
         )}
         
