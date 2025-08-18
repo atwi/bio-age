@@ -590,6 +590,18 @@ function AppContent() {
     // Clear stored AR results when camera is closed
     setArAnalysisResults(null);
     setArCapturedImage(null);
+    
+    // Reset all analysis states
+    setLivePrediction(null);
+    setLiveLoading(false);
+    liveLoadingRef.current = false;
+    setAnalysisProgress(0);
+    setShowFullResultsButton(false);
+    setHasCompletedAnalysis(false);
+    setIsAligned(false);
+    wasAlignedRef.current = false;
+    analyzingLiveRef.current = false;
+    setGuidanceMessage('Position your face in the camera');
 
     setShowWebCamera(false);
   };
