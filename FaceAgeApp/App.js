@@ -314,6 +314,7 @@ function AppContent() {
   // Live AR overlay state (web)
   const [livePrediction, setLivePrediction] = useState(null);
   const [liveLoading, setLiveLoading] = useState(false);
+  const liveLoadingRef = useRef(false);
   const [facePosition, setFacePosition] = useState(null); // { x, y, width, height }
   const [analysisProgress, setAnalysisProgress] = useState(0); // 0-100 for loading ring
   const [showFullResultsButton, setShowFullResultsButton] = useState(false);
@@ -589,6 +590,7 @@ function AppContent() {
     // Clear stored AR results when camera is closed
     setArAnalysisResults(null);
     setArCapturedImage(null);
+
     setShowWebCamera(false);
   };
 
@@ -636,6 +638,7 @@ function AppContent() {
       } else {
         console.log('[LiveAR] No valid image object provided');
         setLiveLoading(false);
+        liveLoadingRef.current = false;
         analyzingLiveRef.current = false;
         if (progressInterval) clearInterval(progressInterval);
         return;
@@ -677,6 +680,8 @@ function AppContent() {
           setHasCompletedAnalysis(true); // Mark analysis as completed
           // Store the full analysis results for reuse
           setArAnalysisResults(data);
+          
+          console.log('[LiveAR] Analysis completed, hasCompletedAnalysis set to true');
         }, 300); // Small delay for smooth transition
         
       } else {
@@ -691,6 +696,7 @@ function AppContent() {
     } finally {
       console.log('[LiveAR] Analysis completed, setting loading to false');
       setLiveLoading(false);
+      liveLoadingRef.current = false;
       analyzingLiveRef.current = false;
       // Always clear the progress interval
       if (progressInterval) clearInterval(progressInterval);
@@ -868,11 +874,11 @@ function AppContent() {
                 maxY
               });
               
-              if (faceAreaFrac < 0.12) {
+              if (faceAreaFrac < 0.08) {
                 message = 'Move closer';
-              } else if (faceAreaFrac > 0.50) {
+              } else if (faceAreaFrac > 0.60) {
                 message = 'Move farther';
-              } else if (cxFrac > 0.20 || cyFrac > 0.20) {
+              } else if (cxFrac > 0.25 || cyFrac > 0.25) {
                 message = 'Center your face';
               } else {
                 message = 'Ready to capture';
@@ -900,15 +906,17 @@ function AppContent() {
                     liveLoading,
                     videoReady: v ? (v.videoWidth && v.videoHeight && v.readyState >= 2) : false
                   });
-                  if (v && !analyzingLiveRef.current && !liveLoading && v.videoWidth && v.videoHeight && v.readyState >= 2) {
-                    console.log('[LiveAR] Auto-triggering analysis');
-                    analyzingLiveRef.current = true;
-                    lastAnalyzeTimeRef.current = Date.now();
-                    setLivePrediction(null);
-                    setLiveLoading(true);
-                    setAnalysisProgress(0);
-                    setShowFullResultsButton(false);
-                    triggerLiveAnalysisFromVideo(v);
+                                  if (v && !analyzingLiveRef.current && !liveLoading && v.videoWidth && v.videoHeight && v.readyState >= 2) {
+                  console.log('[LiveAR] Auto-triggering analysis');
+                  analyzingLiveRef.current = true;
+                  lastAnalyzeTimeRef.current = Date.now();
+                  setLivePrediction(null);
+                  setLiveLoading(true);
+                  liveLoadingRef.current = true;
+                  setAnalysisProgress(0);
+                  setShowFullResultsButton(false);
+                  setHasCompletedAnalysis(false); // Reset for new analysis
+                  triggerLiveAnalysisFromVideo(v);
                   } else {
                     console.log('[LiveAR] Auto-trigger conditions not met, not starting analysis');
                   }
@@ -925,8 +933,128 @@ function AppContent() {
           // Update UI message (rendered in the top overlay, not on canvas)
           setGuidanceMessage(message);
 
-          // No face outline drawing (badge provides alignment feedback)
-          try { /* intentionally empty */ } catch (_) {}
+
+
+          // Draw facial mesh overlay (dots and outlines) when face is detected
+          if (faces.length > 0) {
+            console.log('[LiveAR] Drawing facial mesh overlay, faces:', faces.length);
+            try {
+              const faceLandmarks = faces[0];
+              const n_points = faceLandmarks.length;
+              
+              // Draw all face mesh dots with static gradient
+              for (let idx = 0; idx < n_points; idx++) {
+                const landmark = faceLandmarks[idx];
+                const x = landmark.x * w;
+                const y = landmark.y * h;
+                
+                // Static gradient from blue (#4f8cff) to green (#4fd1c5) like results page
+                const t = idx / n_points;
+                const r = Math.floor((0x4f * (1-t)) + (0x4f * t));
+                const g = Math.floor((0x8c * (1-t)) + (0xd1 * t));
+                const b = Math.floor((0xff * (1-t)) + (0xc5 * t));
+                
+                // Draw static dot
+                ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.7)`;
+                ctx.beginPath();
+                ctx.arc(x, y, 1, 0, 2 * Math.PI);
+                ctx.fill();
+              }
+              
+              // Draw facial region outlines if enabled (like results page)
+              if (apiHealth?.settings?.enable_feature_outlines) {
+                // Eyes outline
+                const leftEyeIndices = [362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398];
+                const rightEyeIndices = [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246];
+                
+                // Draw eye outlines
+                [leftEyeIndices, rightEyeIndices].forEach(eyeIndices => {
+                  ctx.strokeStyle = 'rgba(255, 255, 0, 0.8)'; // Bright cyan like results page
+                  ctx.lineWidth = 2;
+                  ctx.beginPath();
+                  for (let i = 0; i < eyeIndices.length; i++) {
+                    const idx = eyeIndices[i];
+                    if (idx < faceLandmarks.length) {
+                      const landmark = faceLandmarks[idx];
+                      const x = landmark.x * w;
+                      const y = landmark.y * h;
+                      if (i === 0) {
+                        ctx.moveTo(x, y);
+                      } else {
+                        ctx.lineTo(x, y);
+                      }
+                    }
+                  }
+                  ctx.closePath();
+                  ctx.stroke();
+                });
+                
+                // Lips outline
+                const lipsIndices = [61, 146, 91, 181, 84, 17, 314, 405, 320, 307, 375, 321, 308, 324, 318];
+                ctx.strokeStyle = 'rgba(255, 255, 0, 0.8)';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                for (let i = 0; i < lipsIndices.length; i++) {
+                  const idx = lipsIndices[i];
+                  if (idx < faceLandmarks.length) {
+                    const landmark = faceLandmarks[idx];
+                    const x = landmark.x * w;
+                    const y = landmark.y * h;
+                    if (i === 0) {
+                      ctx.moveTo(x, y);
+                    } else {
+                      ctx.lineTo(x, y);
+                    }
+                  }
+                }
+                ctx.closePath();
+                ctx.stroke();
+              }
+              
+              // Face contour fill (semi-opaque blue mask) - ALWAYS show this
+              console.log('[LiveAR] Drawing face contour fill mask');
+              const faceContourIndices = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109];
+              
+              // Add pulsing color effect to mask during loading
+              const now = Date.now();
+              let maskColor = 'rgba(0, 255, 255, 0.18)'; // Default cyan
+              
+              // Animate mask only when loading
+              if (liveLoadingRef.current) {
+                // Very subtle scanning effect
+                const scanPulse = Math.sin(now * 0.001) * 0.1 + 0.9; // 0.8 to 1.0 (subtle)
+                const opacityPulse = Math.sin(now * 0.002) * 0.05 + 0.18; // 0.13 to 0.23 (very subtle)
+                
+                // Keep cyan color, just vary intensity slightly
+                const r = 0;
+                const g = Math.floor(255 * scanPulse); // 204 to 255
+                const b = Math.floor(255 * scanPulse); // 204 to 255
+                
+                maskColor = `rgba(${r}, ${g}, ${b}, ${opacityPulse})`;
+              }
+              
+              // Draw fill first
+              ctx.beginPath();
+              for (let i = 0; i < faceContourIndices.length; i++) {
+                const idx = faceContourIndices[i];
+                if (idx < faceLandmarks.length) {
+                  const landmark = faceLandmarks[idx];
+                  const x = landmark.x * w;
+                  const y = landmark.y * h;
+                  if (i === 0) {
+                    ctx.moveTo(x, y);
+                  } else {
+                    ctx.lineTo(x, y);
+                  }
+                }
+              }
+              ctx.closePath();
+              ctx.fillStyle = maskColor;
+              ctx.fill();
+            } catch (e) {
+              console.log('[LiveAR] Error drawing facial mesh overlay:', e);
+            }
+          }
         });
 
         const loop = async () => {
@@ -1236,6 +1364,8 @@ function AppContent() {
     }
   };
 
+
+
   useEffect(() => {
     if (results && results.faces) {
       results.faces.forEach((face, i) => {
@@ -1327,52 +1457,9 @@ function AppContent() {
         {/* Face Outline Overlay */}
         <View style={styles.faceOutlineContainer} />
         
-        {/* Loading Ring Around Face */}
-        {liveLoading && facePosition && videoRef.current && (
-          <View style={{
-            position: 'absolute',
-            left: (videoRef.current.videoWidth || 640) - facePosition.x - facePosition.width/2 - 20,
-            top: facePosition.minY - 20,
-            width: facePosition.width + 40,
-            height: facePosition.height + 40,
-            zIndex: 5,
-            pointerEvents: 'none'
-          }}>
-            {/* Progress Ring */}
-            <svg
-              width={facePosition.width + 40}
-              height={facePosition.height + 40}
-              style={{ position: 'absolute', top: 0, left: 0 }}
-            >
-              {/* Background ring */}
-              <circle
-                cx={(facePosition.width + 40) / 2}
-                cy={(facePosition.height + 40) / 2}
-                r={(facePosition.width + 40) / 2 - 2}
-                fill="none"
-                stroke="rgba(255, 255, 255, 0.2)"
-                strokeWidth="3"
-              />
-              {/* Progress ring */}
-              <circle
-                cx={(facePosition.width + 40) / 2}
-                cy={(facePosition.height + 40) / 2}
-                r={(facePosition.width + 40) / 2 - 2}
-                fill="none"
-                stroke="rgba(0, 220, 140, 0.8)"
-                strokeWidth="3"
-                strokeDasharray={`${2 * Math.PI * ((facePosition.width + 40) / 2 - 2)}`}
-                strokeDashoffset={`${2 * Math.PI * ((facePosition.width + 40) / 2 - 2) * (1 - analysisProgress / 100)}`}
-                strokeLinecap="round"
-                transform={`rotate(-90 ${(facePosition.width + 40) / 2} ${(facePosition.height + 40) / 2})`}
-                style={{ 
-                  transition: 'stroke-dashoffset 0.3s cubic-bezier(0.4, 0.0, 0.2, 1)',
-                  filter: 'drop-shadow(0 0 8px rgba(0, 220, 140, 0.4))'
-                }}
-              />
-            </svg>
-          </View>
-        )}
+
+        
+
         
         {/* Live Age Estimates Card Display */}
         {arAnalysisResults && arAnalysisResults.faces && arAnalysisResults.faces.length > 0 && !liveLoading && facePosition && videoRef.current && (
