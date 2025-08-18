@@ -286,6 +286,8 @@ function AppContent() {
   const colorMixRef = useRef(0); // 0 = brand gradient, 1 = green; eased per frame for smooth color fade
   const badgeScale = useRef(new Animated.Value(0.96)).current; // instruction badge scale
   const badgeOpacity = useRef(new Animated.Value(0.9)).current; // instruction badge opacity
+  const countdownOpacity = useRef(new Animated.Value(0)).current; // for countdown fade transitions
+  const resultsCardOpacity = useRef(new Animated.Value(0)).current; // for results card fade-in
   const [guidanceMessage, setGuidanceMessage] = useState('Align your face in the frame');
   const [isAligned, setIsAligned] = useState(false);
   
@@ -322,6 +324,8 @@ function AppContent() {
   const [arAnalysisResults, setArAnalysisResults] = useState(null); // Store AR analysis results
   const arAnalysisResultsRef = useRef(null); // Ref for AR analysis results
   const [arCapturedImage, setArCapturedImage] = useState(null); // Store captured image from AR
+  const [countdown, setCountdown] = useState(null); // 3, 2, 1 countdown
+  const countdownTimeoutRef = useRef(null); // For countdown timers
   const lastFaceBoxRef = useRef(null); // {minX, minY, maxX, maxY}
   const analyzingLiveRef = useRef(false);
   const lastAnalyzeTimeRef = useRef(0);
@@ -594,6 +598,17 @@ function AppContent() {
     arAnalysisResultsRef.current = null;
     setArCapturedImage(null);
     
+    // Clear countdown
+    setCountdown(null);
+    if (countdownTimeoutRef.current) {
+      clearTimeout(countdownTimeoutRef.current);
+      countdownTimeoutRef.current = null;
+    }
+    // Reset countdown opacity
+    countdownOpacity.setValue(0);
+    // Reset results card opacity
+    resultsCardOpacity.setValue(0);
+    
     // Reset all analysis states
     setLivePrediction(null);
     setLiveLoading(false);
@@ -697,6 +712,13 @@ function AppContent() {
           console.log('[LiveAR] Setting AR results:', data);
           setArAnalysisResults(data);
           arAnalysisResultsRef.current = data;
+          
+          // Fade in the results card
+          Animated.timing(resultsCardOpacity, {
+            toValue: 1,
+            duration: 400,
+            useNativeDriver: true,
+          }).start();
           
           console.log('[LiveAR] Analysis completed, hasCompletedAnalysis set to true');
         }, 300); // Small delay for smooth transition
@@ -926,42 +948,92 @@ function AppContent() {
               
               // Only trigger analysis if we don't already have results
               if (isCurrentlyAligned && !wasAligned && !analyzingLiveRef.current && !liveLoading && !hasCompletedAnalysis && !arAnalysisResults) {
-                console.log('[LiveAR] Face aligned, preparing to auto-trigger analysis');
-                // Small delay to ensure face is stable
-                if (autoAnalysisTimeoutRef.current) {
-                  console.log('[LiveAR] Clearing existing timeout');
-                  clearTimeout(autoAnalysisTimeoutRef.current);
+                console.log('[LiveAR] Face aligned, starting countdown');
+                // Start countdown instead of immediate analysis
+                
+                // Clear any existing countdown
+                if (countdownTimeoutRef.current) {
+                  clearTimeout(countdownTimeoutRef.current);
                 }
-                console.log('[LiveAR] Setting new timeout');
-                autoAnalysisTimeoutRef.current = setTimeout(() => {
-                  console.log('[LiveAR] Auto-trigger timeout fired!');
-                  const v = videoRef.current;
-                  console.log('[LiveAR] Auto-trigger timeout fired, checking conditions:', {
-                    hasVideo: !!v,
-                    analyzingLive: analyzingLiveRef.current,
-                    liveLoading,
-                    videoReady: v ? (v.videoWidth && v.videoHeight && v.readyState >= 2) : false
-                  });
-                                  if (v && !analyzingLiveRef.current && !liveLoading && v.videoWidth && v.videoHeight && v.readyState >= 2) {
-                  console.log('[LiveAR] Auto-triggering analysis');
-                  analyzingLiveRef.current = true;
-                  lastAnalyzeTimeRef.current = Date.now();
-                  setLivePrediction(null);
-                  setLiveLoading(true);
-                  liveLoadingRef.current = true;
-                  setAnalysisProgress(0);
-                  setShowFullResultsButton(false);
-                  setHasCompletedAnalysis(false); // Reset for new analysis
-                  triggerLiveAnalysisFromVideo(v);
-                  } else {
-                    console.log('[LiveAR] Auto-trigger conditions not met, not starting analysis');
-                  }
-                }, 1000); // 1 second delay to ensure face is stable
-                console.log('[LiveAR] Timeout set, waiting 1 second...');
+                
+                // 1.5 second delay before starting countdown
+                countdownTimeoutRef.current = setTimeout(() => {
+                  setCountdown(3);
+                  
+                  // Fade in the initial countdown
+                  Animated.timing(countdownOpacity, {
+                    toValue: 1,
+                    duration: 200,
+                    useNativeDriver: true,
+                  }).start();
+                  
+                  // Start the countdown sequence after the initial fade-in
+                  setTimeout(() => {
+                    // Start countdown sequence with smooth fade transitions
+                    const startCountdown = (number) => {
+                      if (number > 0) {
+                        // Fade out current text
+                        Animated.timing(countdownOpacity, {
+                          toValue: 0,
+                          duration: 200,
+                          useNativeDriver: true,
+                        }).start(() => {
+                          // Update countdown number
+                          setCountdown(number);
+                          
+                          // Fade in new text
+                          Animated.timing(countdownOpacity, {
+                            toValue: 1,
+                            duration: 200,
+                            useNativeDriver: true,
+                          }).start();
+                        });
+                        
+                        countdownTimeoutRef.current = setTimeout(() => startCountdown(number - 1), 1000);
+                      } else {
+                        // Countdown finished, fade out and start analysis
+                        Animated.timing(countdownOpacity, {
+                          toValue: 0,
+                          duration: 200,
+                          useNativeDriver: true,
+                        }).start(() => {
+                          setCountdown(null);
+                          
+                          const v = videoRef.current;
+                          if (v && !analyzingLiveRef.current && !liveLoading && v.videoWidth && v.videoHeight && v.readyState >= 2) {
+                            console.log('[LiveAR] Countdown finished, starting analysis');
+                            analyzingLiveRef.current = true;
+                            lastAnalyzeTimeRef.current = Date.now();
+                            setLivePrediction(null);
+                            setLiveLoading(true);
+                            liveLoadingRef.current = true;
+                            setAnalysisProgress(0);
+                            setShowFullResultsButton(false);
+                            setHasCompletedAnalysis(false); // Reset for new analysis
+                            triggerLiveAnalysisFromVideo(v);
+                          } else {
+                            console.log('[LiveAR] Analysis conditions not met after countdown');
+                            setGuidanceMessage('Ready to capture');
+                          }
+                        });
+                      }
+                    };
+                    
+                    startCountdown(2); // Start with 2 since 3 is already showing
+                  }, 1000); // Wait 1 second after showing "3" before starting the countdown sequence
+                }, 1500);
               } else if (isCurrentlyAligned && wasAligned) {
                 console.log('[LiveAR] Face still aligned, no need to trigger again');
               } else if (!isCurrentlyAligned) {
                 console.log('[LiveAR] Face not ready:', message);
+                // Clear countdown if face is no longer aligned
+                if (countdown !== null) {
+                  setCountdown(null);
+                  if (countdownTimeoutRef.current) {
+                    clearTimeout(countdownTimeoutRef.current);
+                    countdownTimeoutRef.current = null;
+                  }
+                }
               }
             }
           } catch (_) {}
@@ -1482,13 +1554,20 @@ function AppContent() {
                 ) : (
                   <Ionicons name="scan-outline" size={16} color="rgba(255,255,255,0.9)" />
                 )}
-                <Text style={styles.instructionText}>
-                  {liveLoading ? 'Scanning face...' : guidanceMessage}
-                </Text>
+                <Animated.Text 
+                  style={[
+                    styles.instructionText,
+                    { opacity: countdown !== null ? countdownOpacity : 1 }
+                  ]}
+                >
+                  {liveLoading ? 'Scanning face...' : (countdown !== null ? `${countdown}` : guidanceMessage)}
+                </Animated.Text>
               </View>
             </Animated.View>
           )}
         </View>
+        
+
         
         {/* Face Outline Overlay */}
         <View style={styles.faceOutlineContainer} />
@@ -1523,7 +1602,7 @@ function AppContent() {
           const cardY = visualFaceTop - cardHeight - 10; // Position card so its bottom is 10px above face top
           
           return (
-            <View style={{
+            <Animated.View style={{
               position: 'absolute',
               left: Math.max(20, Math.min(videoRect.width - cardWidth - 20, mirroredX)), // Clamp to screen bounds
               top: Math.max(20, cardY), // Ensure card doesn't go off top
@@ -1536,7 +1615,8 @@ function AppContent() {
               backdropFilter: 'blur(10px)',
               minWidth: 280,
               maxWidth: 320,
-              filter: 'drop-shadow(0 0 20px rgba(0,0,0,0.5))'
+              filter: 'drop-shadow(0 0 20px rgba(0,0,0,0.5))',
+              opacity: resultsCardOpacity
             }}>
             {/* Age Estimates Header */}
             <Layout style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'transparent', marginBottom: 12 }}>
@@ -1613,7 +1693,7 @@ function AppContent() {
                 </Layout>
               ));
             })()}
-          </View>
+          </Animated.View>
         )})()}
         
         {/* Results Button */}
