@@ -27,7 +27,6 @@ import { Asset } from 'expo-asset';
 import { auth, db, storage, googleProvider, appleProvider } from './firebase';
 import { signInWithGoogle, signInWithApple, signOut, createOrUpdateUserDocument, onAuthStateChange, getCurrentUser, sendMagicLink, isMagicLink, completeMagicLinkSignIn } from './services/authService';
 import { getUserAnalysisHistory, getUserProfile, updateUserProfile, deleteAnalysis } from './services/userService';
-import { getGptRequestStatus, checkAndIncrementGptRequests, resetAnonymousGptRequests } from './services/gptRequestService';
 
 // UI Kitten imports
 import * as eva from '@eva-design/eva';
@@ -164,7 +163,7 @@ const MODEL_DESCRIPTIONS = {
   chatgpt: 'Best for human-like age perception',
 };
 
-const AppHeader = React.memo(function AppHeader({ onShowInfo, user, onSignIn, onSignOut, gptRequestStatus, onResetGptRequests }) {
+const AppHeader = React.memo(function AppHeader({ onShowInfo, user, onSignIn, onSignOut }) {
   const openEmail = () => {
     const emailUrl = 'mailto:alexthorburnwinsor@gmail.com';
     if (Platform.OS === 'web') {
@@ -201,26 +200,6 @@ const AppHeader = React.memo(function AppHeader({ onShowInfo, user, onSignIn, on
       )}
       accessoryRight={() => (
         <Layout style={{ flexDirection: 'row', alignItems: 'center' }}>
-          {/* GPT Request Counter */}
-          {gptRequestStatus ? (
-            <TouchableOpacity 
-              style={styles.gptCounterContainer}
-              onPress={onResetGptRequests}
-              onLongPress={onResetGptRequests}
-            >
-              <Text style={[styles.gptCounterNumber, { color: gptRequestStatus.error ? '#FFA500' : (gptRequestStatus.canUseGpt ? '#00DC8C' : '#FF6B6B') }]}>
-                {gptRequestStatus.error ? '∞' : gptRequestStatus.remaining}
-              </Text>
-              <Text style={styles.gptCounterLabel}>
-                {gptRequestStatus.error ? 'Unlimited' : 'Pro Requests'}
-              </Text>
-            </TouchableOpacity>
-          ) : (
-            <Text style={{ fontSize: 10, color: '#666', marginRight: 8 }}>
-              Loading...
-            </Text>
-          )}
-          
           {user ? (
             <>
               <Text style={{ fontSize: 12, color: '#666', marginRight: 8 }}>
@@ -333,9 +312,6 @@ function AppContent() {
   const [emailForLink, setEmailForLink] = useState('');
   const [emailSending, setEmailSending] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
-  
-  // GPT Request tracking
-  const [gptRequestStatus, setGptRequestStatus] = useState(null);
 
   // Live AR overlay state (web)
   const [livePrediction, setLivePrediction] = useState(null);
@@ -383,40 +359,6 @@ function AppContent() {
 
     return () => unsubscribe();
   }, []);
-
-  // Update GPT request status when user changes
-  useEffect(() => {
-    const updateGptStatus = async () => {
-      try {
-        console.log('[GPT] Updating status for user:', user?.uid || 'anonymous');
-        console.log('[GPT] Auth loading state:', authLoading);
-        console.log('[GPT] User object:', user);
-        
-        // Authentication should be ready now
-        
-        const status = await getGptRequestStatus(user);
-        console.log('[GPT] Status result:', status);
-        setGptRequestStatus(status);
-      } catch (error) {
-        console.error('Error updating GPT status:', error);
-        setGptRequestStatus(null);
-      }
-    };
-
-    if (!authLoading) {
-      updateGptStatus();
-    }
-  }, [user, authLoading]);
-
-  // Reset GPT requests (for testing)
-  const handleResetGptRequests = async () => {
-    if (!user) {
-      // Only allow reset for anonymous users
-      await resetAnonymousGptRequests();
-      const status = await getGptRequestStatus(user);
-      setGptRequestStatus(status);
-    }
-  };
 
   // Complete email link sign-in if opened via magic link (web)
   useEffect(() => {
@@ -698,36 +640,6 @@ function AppContent() {
     let progressInterval = null;
     try {
       console.log('[LiveAR] Starting analyzeFaceLive with:', imageObj);
-      
-      // Only check GPT request limits if GPT is enabled on the backend
-      let gptCheck = null;
-      let shouldIncrementGpt = false;
-      console.log('[GPT] Checking GPT limits - apiHealth:', apiHealth);
-      console.log('[GPT] Checking GPT limits - apiHealth?.settings:', apiHealth?.settings);
-      console.log('[GPT] Checking GPT limits - apiHealth?.settings?.enable_chatgpt:', apiHealth?.settings?.enable_chatgpt);
-      if (apiHealth?.settings?.enable_chatgpt) {
-        gptCheck = await getGptRequestStatus(user);
-        console.log('[GPT] GPT check result:', gptCheck);
-        if (gptCheck.canUseGpt) {
-          shouldIncrementGpt = true;
-          console.log('[GPT] Setting shouldIncrementGpt to true');
-        } else {
-          console.log('[GPT] Cannot use GPT, showing alert');
-          // Show alert but don't block the analysis
-          Alert.alert(
-            'Pro Requests Limit Reached',
-            `You've used all ${gptCheck.limit} Pro Requests. Analysis will continue without GPT. Sign up to get ${gptCheck.limit === 2 ? 10 : gptCheck.limit} requests!`,
-            [
-              { text: 'Continue', style: 'default' },
-              { text: 'Sign Up', onPress: () => onSignIn('google') }
-            ]
-          );
-        }
-      } else {
-        console.log('[GPT] GPT not enabled on backend, skipping check');
-      }
-      console.log('[GPT] Final shouldIncrementGpt value:', shouldIncrementGpt);
-      
       setLiveLoading(true);
       setAnalysisProgress(0);
       
@@ -765,40 +677,13 @@ function AppContent() {
       console.log('[LiveAR] Sending request to API...');
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 120000);
-      
-      // Prepare headers for GPT request limit
-      const headers = {};
-      if (gptCheck && !gptCheck.canUseGpt) {
-        headers['x-disable-chatgpt'] = 'true';
-      }
-      
-      const response = await fetch(`${API_BASE_URL}/analyze-face`, { 
-        method: 'POST', 
-        body: formData, 
-        headers: Object.keys(headers).length > 0 ? headers : undefined,
-        signal: controller.signal 
-      });
+      const response = await fetch(`${API_BASE_URL}/analyze-face`, { method: 'POST', body: formData, signal: controller.signal });
       clearTimeout(timeoutId);
 
       console.log('[LiveAR] API response status:', response.status);
       if (response.ok) {
         const data = await response.json();
         console.log('[LiveAR] API response data:', data);
-        
-        // Only increment GPT counter after successful analysis
-        console.log('[GPT] After successful analysis - shouldIncrementGpt:', shouldIncrementGpt);
-        if (shouldIncrementGpt) {
-          console.log('[GPT] Before increment - shouldIncrementGpt:', shouldIncrementGpt);
-          const incrementResult = await checkAndIncrementGptRequests(user);
-          console.log('[GPT] Increment result:', incrementResult);
-          if (incrementResult.success) {
-            console.log('[GPT] Setting new status:', incrementResult.status);
-            setGptRequestStatus(incrementResult.status);
-          }
-        } else {
-          console.log('[GPT] Skipping increment - shouldIncrementGpt is false');
-        }
-        
         let ageToShow = null;
         if (data && data.faces && data.faces.length > 0) {
           const f = data.faces[0];
@@ -1180,16 +1065,22 @@ function AppContent() {
               const faceLandmarks = faces[0];
               const n_points = faceLandmarks.length;
               
-              // Draw all face mesh dots with uniform bright cyan (matching results page)
+              // Draw all face mesh dots with static gradient
               for (let idx = 0; idx < n_points; idx++) {
                 const landmark = faceLandmarks[idx];
                 const x = landmark.x * w;
                 const y = landmark.y * h;
                 
-                // Unified bright cyan dots (matching backend results page)
-                ctx.fillStyle = 'rgba(0, 255, 255, 0.8)'; // Bright cyan with 80% opacity
+                // Static gradient from blue (#4f8cff) to green (#4fd1c5) like results page
+                const t = idx / n_points;
+                const r = Math.floor((0x4f * (1-t)) + (0x4f * t));
+                const g = Math.floor((0x8c * (1-t)) + (0xd1 * t));
+                const b = Math.floor((0xff * (1-t)) + (0xc5 * t));
+                
+                // Draw static dot
+                ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.7)`;
                 ctx.beginPath();
-                ctx.arc(x, y, 1.5, 0, 2 * Math.PI); // Slightly larger radius (1.5px vs 1px)
+                ctx.arc(x, y, 1, 0, 2 * Math.PI);
                 ctx.fill();
               }
               
@@ -1318,35 +1209,6 @@ function AppContent() {
   const analyzeFace = async (imageToAnalyze = selectedImage, { overrideLowConfidence = false } = {}) => {
     if (!imageToAnalyze) return;
 
-    // Only check GPT request limits if GPT is enabled on the backend
-    let gptCheck = null;
-    let shouldIncrementGpt = false;
-    console.log('[GPT] analyzeFace - Checking GPT limits - apiHealth:', apiHealth);
-    console.log('[GPT] analyzeFace - Checking GPT limits - apiHealth?.settings:', apiHealth?.settings);
-    console.log('[GPT] analyzeFace - Checking GPT limits - apiHealth?.settings?.enable_chatgpt:', apiHealth?.settings?.enable_chatgpt);
-    if (apiHealth?.settings?.enable_chatgpt) {
-      gptCheck = await getGptRequestStatus(user);
-      console.log('[GPT] analyzeFace - GPT check result:', gptCheck);
-      if (gptCheck.canUseGpt) {
-        shouldIncrementGpt = true;
-        console.log('[GPT] analyzeFace - Setting shouldIncrementGpt to true');
-      } else {
-        console.log('[GPT] analyzeFace - Cannot use GPT, showing alert');
-        // Show alert but don't block the analysis
-        Alert.alert(
-          'Pro Requests Limit Reached',
-          `You've used all ${gptCheck.limit} Pro Requests. Analysis will continue without GPT. Sign up to get ${gptCheck.limit === 2 ? 10 : gptCheck.limit} requests!`,
-          [
-            { text: 'Continue', style: 'default' },
-            { text: 'Sign Up', onPress: () => onSignIn('google') }
-          ]
-        );
-      }
-    } else {
-      console.log('[GPT] analyzeFace - GPT not enabled on backend, skipping check');
-    }
-    console.log('[GPT] analyzeFace - Final shouldIncrementGpt value:', shouldIncrementGpt);
-
     setLoading(true);
     try {
       const formData = new FormData();
@@ -1372,19 +1234,10 @@ function AppContent() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes timeout
       
-      // Prepare headers
-      const headers = {};
-      if (overrideLowConfidence) {
-        headers['x-allow-low-confidence'] = 'true';
-      }
-      if (gptCheck && !gptCheck.canUseGpt) {
-        headers['x-disable-chatgpt'] = 'true';
-      }
-      
       const response = await fetch(`${API_BASE_URL}/analyze-face${overrideLowConfidence ? '?allow_low_confidence=true' : ''}`, {
         method: 'POST',
         body: formData,
-        headers: Object.keys(headers).length > 0 ? headers : undefined,
+        headers: overrideLowConfidence ? { 'x-allow-low-confidence': 'true' } : undefined,
         signal: controller.signal,
       });
       
@@ -1395,21 +1248,6 @@ function AppContent() {
       if (response.ok) {
         const data = await response.json();
         console.log('Analysis results:', data);
-        
-        // Only increment GPT counter after successful analysis
-        console.log('[GPT] After successful analysis - shouldIncrementGpt:', shouldIncrementGpt);
-        if (shouldIncrementGpt) {
-          console.log('[GPT] Before increment - shouldIncrementGpt:', shouldIncrementGpt);
-          const incrementResult = await checkAndIncrementGptRequests(user);
-          console.log('[GPT] Increment result:', incrementResult);
-          if (incrementResult.success) {
-            console.log('[GPT] Setting new status:', incrementResult.status);
-            setGptRequestStatus(incrementResult.status);
-          }
-        } else {
-          console.log('[GPT] Skipping increment - shouldIncrementGpt is false');
-        }
-        
         // Log ChatGPT debug info for each face
         if (data.faces) {
           data.faces.forEach((face, i) => {
@@ -1572,6 +1410,7 @@ function AppContent() {
       if (face.age_harvard_calibrated !== null && face.age_harvard_calibrated !== undefined) shareText += `Harvard (calibrated): ${Number(face.age_harvard_calibrated).toFixed(1)} years\n`;
       if (face.age_deepface !== null && face.age_deepface !== undefined) shareText += `DeepFace: ${Number(face.age_deepface).toFixed(1)} years\n`;
       if (face.age_chatgpt !== null && face.age_chatgpt !== undefined) shareText += `ChatGPT: ${Number(face.age_chatgpt).toFixed(1)} years\n`;
+      if (face.confidence !== null && face.confidence !== undefined) shareText += `Confidence: ${(Number(face.confidence) * 100).toFixed(1)}%\n`;
       shareText += `\n`;
     });
 
@@ -2764,10 +2603,7 @@ function AppContent() {
         user={user}
         onSignIn={handleSignIn}
         onSignOut={handleSignOut}
-        gptRequestStatus={gptRequestStatus}
-        onResetGptRequests={handleResetGptRequests}
       />
-      {console.log('[GPT] AppHeader gptRequestStatus:', gptRequestStatus)}
       <Layout style={styles.fullScreen}>
         <Suspense fallback={<LoadingSpinner message="Loading TrueAge..." />}>
         {currentStep === 1 && renderStep1()}
@@ -3503,30 +3339,6 @@ const styles = StyleSheet.create({
     borderBottomColor: '#1B202B',
     minHeight: 60,
     paddingHorizontal: 8,
-  },
-  gptCounterContainer: {
-    flexDirection: 'column',
-    alignItems: 'center',
-    marginRight: 16,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    backgroundColor: 'rgba(14, 17, 22, 0.85)',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
-    backdropFilter: 'blur(10px)',
-  },
-  gptCounterNumber: {
-    fontSize: 16,
-    fontWeight: '700',
-    lineHeight: 18,
-  },
-  gptCounterLabel: {
-    fontSize: 10,
-    color: '#E6EAF2',
-    opacity: 0.7,
-    fontWeight: '500',
-    lineHeight: 12,
   },
   mainContainer: {
     flex: 1,

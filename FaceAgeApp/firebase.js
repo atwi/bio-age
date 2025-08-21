@@ -40,8 +40,6 @@ try {
     useFetchStreams: false,
     // Add connection timeout and retry settings
     cacheSizeBytes: 50 * 1024 * 1024, // 50MB cache
-    // Add authentication persistence
-    synchronizeTabs: true,
   });
 } catch (error) {
   console.error('Firestore initialization error:', error);

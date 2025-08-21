@@ -125,8 +125,7 @@ const createOrUpdateUserDocument = async (user) => {
         lastLoginAt: serverTimestamp(),
         subscription: 'free',
         analysisCount: 0,
-        analyses: [],
-        gptRequestsUsed: 0
+        analyses: []
       };
       
       // Remove undefined values to prevent Firestore errors
